@@ -15,6 +15,7 @@ import getpass
 import os
 import sys
 
+from . import __version__
 from .store import SharedDir, Session, StoreError
 
 
@@ -180,6 +181,9 @@ def main(argv=None) -> None:
     parser = argparse.ArgumentParser(
         prog="paf",
         description="phone_a_friend - encrypted chat over a shared directory",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"paf {__version__}"
     )
     parser.add_argument("--dir", "-d", help="shared directory (or $PAF_DIR)")
     parser.add_argument("--user", "-u", help="username (or $PAF_USER)")
