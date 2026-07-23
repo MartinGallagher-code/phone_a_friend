@@ -4,15 +4,19 @@
 
 name: Publish to PyPI
 
-# Publishes when a GitHub release is created (e.g. tag v0.1.0).
+# Publishes when a version tag (v*) is pushed, a GitHub release is
+# created, or the workflow is dispatched manually.
 # Uses PyPI "trusted publishing" - no API token needed. One-time setup:
 # on pypi.org -> your project (or pending publisher) -> Publishing ->
 # add GitHub publisher: owner MartinGallagher-code, repo phone_a_friend,
 # workflow publish.yml, environment pypi.
 
 on:
+  push:
+    tags: ["v*"]
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
   build:
