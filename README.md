@@ -7,6 +7,8 @@
 [![REUSE status](https://api.reuse.software/badge/github.com/MartinGallagher-code/phone_a_friend)](https://api.reuse.software/info/github.com/MartinGallagher-code/phone_a_friend)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 
+**Website:** <https://martingallagher-code.github.io/phone_a_friend/>
+
 Serverless, end-to-end-encrypted chat for people who share access to the same
 Linux directory (an NFS mount, a group-writable `/srv/chat`, a shared home
 server, ...). There is **no server process**: every client reads and writes
