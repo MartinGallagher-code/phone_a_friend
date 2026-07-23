@@ -58,7 +58,13 @@ class CliTest(unittest.TestCase):
         import phone_a_friend
 
         out, _ = self.run_cli("--version", expect_exit=0)
-        self.assertEqual(out.strip(), f"paf {phone_a_friend.__version__}")
+        first, *rest = out.strip().splitlines()
+        self.assertEqual(
+            first, f"phone_a_friend (paf) {phone_a_friend.__version__}"
+        )
+        self.assertIn(phone_a_friend.__copyright__, rest)
+        self.assertTrue(any("GPL-3.0-or-later" in ln for ln in rest))
+        self.assertTrue(any("no warranty" in ln for ln in rest))
 
     def test_no_shared_dir(self):
         _, err = self.run_cli("-u", "alice", "status", expect_exit=2)
