@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Martin Gallagher
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """End-to-end tests for the shared-directory protocol (no TUI needed).
 
 Run with:  python -m unittest discover -s tests -v

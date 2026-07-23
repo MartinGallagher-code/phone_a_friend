@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: 2026 Martin Gallagher
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package
+        run: pip install . coverage
+      - name: Run tests with coverage (100% enforced)
+        run: |
+          coverage run -m unittest discover -s tests -v
+          coverage report
+      - name: Smoke-test the CLI
+        run: |
+          D="$(mktemp -d)"
+          paf -d "$D" -u alice --passphrase pw-a register
+          paf -d "$D" -u bob   --passphrase pw-b register
+          paf -d "$D" -u alice --passphrase pw-a invite bob
+          paf -d "$D" -u bob   --passphrase pw-b accept --from alice
+          paf -d "$D" -u alice --passphrase pw-a send --to bob "hello"
+          paf -d "$D" -u bob   --passphrase pw-b read --to alice | grep -q "hello"
+          ! grep -r "hello" "$D" --include="*.json" -l | grep -q . || exit 1
+
+  reuse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: REUSE compliance check
+        uses: fsfe/reuse-action@v5
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build sdist and wheel
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

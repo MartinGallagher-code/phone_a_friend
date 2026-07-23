@@ -1,5 +1,12 @@
 # phone_a_friend
 
+[![PyPI](https://img.shields.io/pypi/v/phone-a-friend?label=PyPI)](https://pypi.org/project/phone-a-friend/)
+[![Python versions](https://img.shields.io/pypi/pyversions/phone-a-friend)](https://pypi.org/project/phone-a-friend/)
+[![CI](https://github.com/MartinGallagher-code/phone_a_friend/actions/workflows/ci.yml/badge.svg)](https://github.com/MartinGallagher-code/phone_a_friend/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/MartinGallagher-code/phone_a_friend/actions/workflows/ci.yml)
+[![REUSE status](https://api.reuse.software/badge/github.com/MartinGallagher-code/phone_a_friend)](https://api.reuse.software/info/github.com/MartinGallagher-code/phone_a_friend)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+
 Serverless, end-to-end-encrypted chat for people who share access to the same
 Linux directory (an NFS mount, a group-writable `/srv/chat`, a shared home
 server, ...). There is **no server process**: every client reads and writes
@@ -56,10 +63,16 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
 
 ## Install
 
-Requires Python ≥ 3.9 and the `cryptography` package.
+Requires Python ≥ 3.9 (Linux). From PyPI:
 
 ```bash
-pip install -e .          # installs the `paf` command
+pip install phone-a-friend     # installs the `paf` command
+```
+
+From a checkout:
+
+```bash
+pip install .             # or `pip install -e .` for development
 # or, without installing:
 pip install -r requirements.txt
 alias paf='python -m phone_a_friend'
@@ -123,6 +136,29 @@ paf -d /srv/paf -u bob   status                # contacts, groups, unread
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+Coverage is 100% and enforced in CI (`fail_under = 100` in `pyproject.toml`):
+
+```bash
+pip install coverage
+coverage run -m unittest discover -s tests && coverage report
+```
+
+## Releasing to PyPI
+
+Publishing is automated via `.github/workflows/publish.yml` using PyPI
+[trusted publishing](https://docs.pypi.org/trusted-publishers/) — no API
+token is stored in the repo. One-time setup on pypi.org: add a GitHub
+publisher for `MartinGallagher-code/phone_a_friend`, workflow
+`publish.yml`, environment `pypi`. Then creating a GitHub release (e.g.
+tag `v0.1.0`) builds, checks, and uploads the sdist and wheel.
+
+## Licensing
+
+Licensed under GPL-3.0-or-later. The repository is compliant with the
+[REUSE Specification](https://reuse.software/): every file carries SPDX
+copyright and license information, and license texts live in `LICENSES/`.
+Compliance is checked in CI with `reuse lint`.
 
 ## Shared-directory layout
 

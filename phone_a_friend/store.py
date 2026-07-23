@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Martin Gallagher
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Shared-directory message store for phone_a_friend.
 
 There is no server: every client reads and writes plain files inside one
@@ -474,15 +478,24 @@ class Session:
                     f"no key exchanged with {target} - send or accept an invite first"
                 )
             directory = self.shared.dm_dir(self.name, target)
-            key = crypto.pair_key(self.priv, crypto.b64d(pub_b64))
+            try:
+                key = crypto.pair_key(self.priv, crypto.b64d(pub_b64))
+            except ValueError as exc:
+                raise StoreError(f"corrupt key stored for {target}") from exc
             aad = os.path.basename(directory).encode()
             return directory, key, b"paf-dm|" + aad
         if kind == "grp":
             group = self.config["groups"].get(target)
             if group is None:
                 raise StoreError("no key for that group - accept an invite first")
+            try:
+                key = crypto.b64d(group["key"])
+            except ValueError as exc:
+                raise StoreError("corrupt key stored for that group") from exc
+            if len(key) != crypto.KEY_LEN:
+                raise StoreError("corrupt key stored for that group")
             directory = self.shared.group_msgs_dir(target)
-            return directory, crypto.b64d(group["key"]), b"paf-grp|" + target.encode()
+            return directory, key, b"paf-grp|" + target.encode()
         raise StoreError(f"bad conversation kind: {kind}")
 
     def send_message(self, kind: str, target: str, text: str) -> dict:

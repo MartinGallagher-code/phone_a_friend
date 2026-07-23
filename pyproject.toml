@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Martin Gallagher
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
@@ -7,12 +11,39 @@ name = "phone-a-friend"
 version = "0.1.0"
 description = "Serverless encrypted chat over a shared Linux directory, with a curses TUI"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Martin Gallagher" }]
 requires-python = ">=3.9"
 dependencies = ["cryptography>=3.4"]
+keywords = ["chat", "encryption", "tui", "curses", "serverless", "e2ee"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console :: Curses",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Communications :: Chat",
+    "Topic :: Security :: Cryptography",
+]
+
+[project.urls]
+Homepage = "https://github.com/MartinGallagher-code/phone_a_friend"
+Repository = "https://github.com/MartinGallagher-code/phone_a_friend"
+Issues = "https://github.com/MartinGallagher-code/phone_a_friend/issues"
 
 [project.scripts]
 paf = "phone_a_friend.__main__:main"
 
 [tool.setuptools]
 packages = ["phone_a_friend"]
+
+[tool.coverage.run]
+source = ["phone_a_friend"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+exclude_also = [
+    "if __name__ == .__main__.:",
+]

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Martin Gallagher
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Curses TUI for phone_a_friend.
 
 Left pane: invites, chats (contacts) and groups, with unread indicators.
@@ -167,8 +171,11 @@ class App:
             return
         leftw = max(22, min(32, cols // 4))
         self._draw_sidebar(scr, rows, leftw)
-        for y in range(rows - 1):
-            scr.addch(y, leftw, curses.ACS_VLINE)
+        try:
+            for y in range(rows - 1):
+                scr.addch(y, leftw, curses.ACS_VLINE)
+        except curses.error:
+            pass
         self._draw_conversation(scr, rows, cols, leftw)
         self._draw_status(scr, rows, cols)
         self._place_cursor(scr, rows, cols, leftw)
@@ -197,12 +204,10 @@ class App:
             elif kind == "pend":
                 label = f"  {data} (invited...)"
                 attr = curses.color_pair(CP_DIM)
-            elif kind == "grp":
+            else:  # "grp"
                 g = self.s.config["groups"][data]
                 label = f"  #{g['name']}"
                 label += self._badge(f"grp:{data}")
-            else:
-                label = "?"
             unread_here = ("●" in label)
             if unread_here and kind in ("dm", "grp"):
                 attr |= curses.color_pair(CP_UNREAD) | curses.A_BOLD
@@ -234,8 +239,6 @@ class App:
     def _draw_conversation(self, scr, rows: int, cols: int, leftw: int) -> None:
         x0 = leftw + 2
         width = cols - x0 - 1
-        if width < 10:
-            return
         title = self._conversation_title()
         try:
             scr.addnstr(0, x0, title, width, curses.A_BOLD)
@@ -362,11 +365,7 @@ class App:
             self._action_invite_group(scr)
             return True
         if 32 <= ch < 0x110000 and ch != 127:
-            try:
-                self.input += chr(ch)
-            except ValueError:
-                pass
-            return True
+            self.input += chr(ch)
         return True
 
     def _handle_mouse(self, scr) -> None:
@@ -413,10 +412,7 @@ class App:
         self.active = (kind, target)
         self.scroll = 0
         self._fetch_active(kind, target)
-        try:
-            self.s.mark_read(kind, target)
-        except StoreError:
-            pass
+        self.s.mark_read(kind, target)
         self.unread[self.s.conv_key(kind, target)] = 0
         self.status = HELP
 
@@ -450,10 +446,7 @@ class App:
         self.input = ""
         self.scroll = 0
         self._fetch_active(kind, target)
-        try:
-            self.s.mark_read(kind, target)
-        except StoreError:
-            pass
+        self.s.mark_read(kind, target)
 
     def _action_invite_contact(self, scr) -> None:
         users = [
@@ -528,10 +521,7 @@ class App:
                 if ch in (curses.KEY_BACKSPACE, 127, 8):
                     buf = buf[:-1]
                 elif 32 <= ch < 0x110000 and ch != curses.KEY_RESIZE:
-                    try:
-                        buf += chr(ch)
-                    except ValueError:
-                        pass
+                    buf += chr(ch)
         finally:
             scr.timeout(POLL_MS)
 
