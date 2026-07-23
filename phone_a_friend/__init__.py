@@ -4,5 +4,5 @@
 
 """phone_a_friend - serverless encrypted chat over a shared directory."""
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __copyright__ = "Copyright (C) 2026 Martin Gallagher"

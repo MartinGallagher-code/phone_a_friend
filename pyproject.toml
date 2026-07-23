@@ -28,7 +28,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/MartinGallagher-code/phone_a_friend"
+Homepage = "https://martingallagher-code.github.io/phone_a_friend/"
 Repository = "https://github.com/MartinGallagher-code/phone_a_friend"
 Issues = "https://github.com/MartinGallagher-code/phone_a_friend/issues"
 
