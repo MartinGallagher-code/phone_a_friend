@@ -315,6 +315,36 @@ class TuiTest(unittest.TestCase):
         self.assertIn("error", app.status)
         self.assertEqual(app.input, "hello")
 
+    def test_users_section_lists_strangers(self):
+        a = Session.register(self.shared, "alice", "pw")
+        Session.register(self.shared, "bob", "pw")
+        # bob shows up under USERS on alice's side; Enter + confirm invites
+        app, scr = self.run_app(a, [ENTER, "y", ENTER, -1])
+        self.assertIn("USERS", scr.rendered())
+        self.assertIn("+ bob", scr.rendered())
+        self.assertIn("invite sent to bob", app.status)
+        self.assertEqual(a.config["pending"], [{"type": "contact", "to": "bob"}])
+        # once invited, bob moves from USERS to the pending list
+        self.assertIn(("pend", "bob"), app.items)
+        self.assertNotIn(("usr", "bob"), app.items)
+
+    def test_users_section_confirm_declined(self):
+        a = Session.register(self.shared, "alice", "pw")
+        Session.register(self.shared, "bob", "pw")
+        app, _ = self.run_app(a, [ENTER, "n", ENTER, -1])
+        self.assertEqual(a.config["pending"], [])
+        self.assertIn(("usr", "bob"), app.items)
+
+    def test_users_section_invite_error(self):
+        a = Session.register(self.shared, "alice", "pw")
+        app = tui.App(a)
+        app.items = [("usr", "ghost")]
+        app.sel = 0
+        scr = FakeScreen(["y", ENTER])
+        with fake_curses():
+            app._open_selected(scr)
+        self.assertIn("error", app.status)
+
     def test_pending_item_shown_and_selected(self):
         a = Session.register(self.shared, "alice", "pw")
         Session.register(self.shared, "carol", "pw")
@@ -409,6 +439,53 @@ class TuiTest(unittest.TestCase):
     def test_ctrl_o_without_group(self):
         a = Session.register(self.shared, "alice", "pw")
         app, _ = self.run_app(a, [CTRL_O, -1])
+        self.assertIn("open a group first", app.status)
+
+    # -------------------------------------------------------- slash commands
+    def test_slash_commands_full_flow(self):
+        a = Session.register(self.shared, "alice", "pw")
+        Session.register(self.shared, "bob", "pw")
+        keys = (
+            list("/invite bob") + [ENTER]
+            + list("/group g1") + [ENTER]
+            + list("/ginvite bob") + [ENTER]
+            + list("/bogus") + [ENTER]
+            + [-1]
+        )
+        app, _ = self.run_app(a, keys)
+        self.assertIn({"type": "contact", "to": "bob"}, a.config["pending"])
+        self.assertEqual(app.active[0], "grp")  # /group opened the new group
+        self.assertTrue(
+            any(p["type"] == "group" and p["to"] == "bob"
+                for p in a.config["pending"])
+        )
+        self.assertIn("commands:", app.status)  # unknown command shows usage
+
+    def test_slash_quit_exits_immediately(self):
+        a = Session.register(self.shared, "alice", "pw")
+        scr = FakeScreen(list("/quit") + [ENTER, "X"])
+        app = tui.App(a)
+        with fake_curses():
+            app._main(scr)
+        self.assertEqual(scr.keys, ["X"])  # loop ended before the sentinel
+
+    def test_slash_command_edge_cases(self):
+        a = Session.register(self.shared, "alice", "pw")
+        keys = (
+            list("/invite") + [ENTER]           # missing argument -> usage
+            + list("/invite ghost") + [ENTER]   # unknown user -> error
+            + list("/ginvite bob") + [ENTER]    # no group open
+            + [-1]
+        )
+        app, _ = self.run_app(a, keys)
+        self.assertIn("open a group first", app.status)
+
+    def test_function_key_aliases(self):
+        a = Session.register(self.shared, "alice", "pw")
+        app, _ = self.run_app(
+            a,
+            [curses.KEY_F2, ESC, curses.KEY_F3, ESC, curses.KEY_F4, -1],
+        )
         self.assertIn("open a group first", app.status)
 
     # ------------------------------------------------------- direct coverage

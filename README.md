@@ -19,8 +19,10 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
 │ CHATS                │ 09:13 alice: sure - where?                 │
 │  bob                 │ 09:14 bob:   the usual                     │
 │  dave ●2             │                                            │
-│ GROUPS               ├────────────────────────────────────────────┤
-│  #book-club ●1       │ > see you at noo▊                          │
+│ GROUPS               │                                            │
+│  #book-club ●1       ├────────────────────────────────────────────┤
+│ USERS                │ > see you at noo▊                          │
+│  + erin              │                                            │
 └──────────────────────┴────────────────────────────────────────────┘
 ```
 
@@ -34,6 +36,8 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
 * **Create groups and invite people** — each group has a random symmetric
   key; inviting someone pushes the group key to them (sealed to their public
   key). Any member can invite others.
+* **See who's around** — registered users you have not connected with yet
+  are listed under USERS in the left pane; select one to send a chat invite.
 * **Send/receive messages** to users or groups. The left-hand pane lists
   invites, chats and groups; click (mouse supported) or use ↑/↓ + Enter to
   open one and read its messages. New messages in the open conversation
@@ -103,15 +107,28 @@ In the TUI:
 
 | Key           | Action                                                  |
 |---------------|---------------------------------------------------------|
-| ↑ / ↓ / click | select a chat, group or invite in the left pane         |
+| ↑ / ↓ / click | select a chat, group, user or invite in the left pane   |
 | Enter         | open selection — or send, if the input line has text    |
-| Ctrl-N        | invite a user to chat (pushes your public key)          |
-| Ctrl-G        | create a group                                          |
-| Ctrl-O        | invite a user to the open group (pushes the group key)  |
+| F2 or Ctrl-N  | invite a user to chat (pushes your public key)          |
+| F3 or Ctrl-G  | create a group                                          |
+| F4 or Ctrl-O  | invite a user to the open group (pushes the group key)  |
 | PgUp / PgDn   | scroll message history                                  |
 | Esc           | clear input line / quit                                 |
 
-Selecting an incoming invite prompts you to accept (`y`) or decline (`n`).
+Selecting an incoming invite prompts you to accept (`y`) or decline (`n`);
+selecting a name under USERS prompts to send them a chat invite.
+
+Every action is also available as a **slash command** typed into the input
+line — these work in any terminal, including ones whose host application
+intercepts Ctrl or function keys (the VS Code integrated terminal binds
+Ctrl-N/Ctrl-G/Ctrl-O itself):
+
+```
+/invite USER     invite a user to chat
+/group NAME      create a group
+/ginvite USER    invite a user to the open (or selected) group
+/quit            exit
+```
 
 ### Scripting / headless use
 

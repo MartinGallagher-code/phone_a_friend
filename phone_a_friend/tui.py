@@ -4,7 +4,8 @@
 
 """Curses TUI for phone_a_friend.
 
-Left pane: invites, chats (contacts) and groups, with unread indicators.
+Left pane: invites, chats (contacts), groups, and registered users you have
+not connected with yet, with unread indicators.
 Right pane: the active conversation plus an input line.
 
 Keys
@@ -12,12 +13,22 @@ Keys
 Up/Down          select an item in the left pane
 Enter            open the selected item (or send, if the input line has text)
                  on an invite: prompts to accept/decline
-Ctrl-N           invite a user to chat (pushes your public key to them)
-Ctrl-G           create a new group
-Ctrl-O           invite a user to the active group (pushes the group key)
+                 on a user under USERS: prompts to send them a chat invite
+F2 or Ctrl-N     invite a user to chat (pushes your public key to them)
+F3 or Ctrl-G     create a new group
+F4 or Ctrl-O     invite a user to the active group (pushes the group key)
 PgUp/PgDn        scroll message history
 Esc              clear the input line / quit
 Mouse click      select + open items in the left pane
+
+Slash commands typed into the input line work in any terminal - including
+ones whose host application intercepts Ctrl or function keys, such as the
+VS Code integrated terminal (VS Code binds Ctrl-N/Ctrl-G/Ctrl-O itself):
+
+/invite USER     invite a user to chat
+/group NAME      create a group
+/ginvite USER    invite a user to the open (or selected) group
+/quit            exit
 
 The client polls the shared directory a few times per second; new messages
 in the active conversation appear immediately, others light up an unread
@@ -34,7 +45,7 @@ from typing import Dict, List, Optional, Tuple
 from .store import Session, StoreError
 
 POLL_MS = 400
-HELP = "^N invite chat  ^G new group  ^O invite to group  Enter open/send  Esc quit"
+HELP = "F2/^N invite  F3/^G group  F4/^O g-invite  /quit quit  Enter open/send"
 
 CP_HEADER = 1
 CP_SELECT = 2
@@ -143,6 +154,21 @@ class App:
         )
         for gid, g in groups:
             items.append(("grp", gid))
+        # registered users we have no connection with yet: select to invite
+        strangers = [
+            u
+            for u in self.s.shared.list_users()
+            if u != self.s.name
+            and u not in self.s.config["contacts"]
+            and not any(
+                p["type"] == "contact" and p["to"] == u
+                for p in self.s.config["pending"]
+            )
+        ]
+        if strangers:
+            items.append(("hdr", "USERS"))
+            for u in strangers:
+                items.append(("usr", u))
         self.items = items
         if self.sel >= len(items):
             self.sel = max(0, len(items) - 1)
@@ -204,6 +230,9 @@ class App:
             elif kind == "pend":
                 label = f"  {data} (invited...)"
                 attr = curses.color_pair(CP_DIM)
+            elif kind == "usr":
+                label = f" + {data}"
+                attr = curses.color_pair(CP_DIM)
             else:  # "grp"
                 g = self.s.config["groups"][data]
                 label = f"  #{g['name']}"
@@ -254,9 +283,18 @@ class App:
             for ln in [
                 "Welcome! Select a chat or group on the left.",
                 "",
-                "Ctrl-N  invite someone to chat",
-                "Ctrl-G  create a group",
-                "Ctrl-O  invite someone to the open group",
+                "Registered users you have not connected with",
+                "appear under USERS - select one and press",
+                "Enter to send them a chat invite.",
+                "",
+                "F2 or Ctrl-N   invite someone to chat by name",
+                "F3 or Ctrl-G   create a group",
+                "F4 or Ctrl-O   invite someone to the open group",
+                "",
+                "Or type a command into the input line:",
+                "/invite USER   /group NAME   /ginvite USER   /quit",
+                "(commands always work, even in terminals that",
+                "swallow Ctrl or function keys, like VS Code)",
                 "",
                 "Invites push public keys: without an accepted",
                 "invite, messages cannot be decrypted.",
@@ -342,7 +380,11 @@ class App:
                 self.s.mark_read(*self.active)
             return True
         if ch in (10, 13, curses.KEY_ENTER):
-            if self.input.strip() and self.active:
+            text = self.input.strip()
+            if text.startswith("/"):
+                self.input = ""
+                return self._run_command(text)
+            if text and self.active:
                 self._send()
             else:
                 self._open_selected(scr)
@@ -355,13 +397,13 @@ class App:
                 self.input = ""
                 return True
             return not self._confirm(scr, "Quit phone_a_friend? [y/N] ")
-        if ch == 14:  # Ctrl-N
+        if ch in (14, curses.KEY_F2):  # Ctrl-N / F2
             self._action_invite_contact(scr)
             return True
-        if ch == 7:  # Ctrl-G
+        if ch in (7, curses.KEY_F3):  # Ctrl-G / F3
             self._action_create_group(scr)
             return True
-        if ch == 15:  # Ctrl-O
+        if ch in (15, curses.KEY_F4):  # Ctrl-O / F4
             self._action_invite_group(scr)
             return True
         if 32 <= ch < 0x110000 and ch != 127:
@@ -404,6 +446,9 @@ class App:
             self._open_conv("grp", str(data))
         elif kind == "pend":
             self.status = f"waiting for {data} to accept your invite"
+        elif kind == "usr":
+            if self._confirm(scr, f"send a chat invite to {data}? [y/N] "):
+                self._invite_contact(str(data))
         elif kind == "inv":
             fname, payload = data
             self._handle_invite(scr, fname, payload)
@@ -448,6 +493,39 @@ class App:
         self._fetch_active(kind, target)
         self.s.mark_read(kind, target)
 
+    def _invite_contact(self, name: str) -> None:
+        try:
+            self.s.invite_contact(name)
+            self.status = f"invite sent to {name} (your key was pushed)"
+        except StoreError as exc:
+            self.status = f"error: {exc}"
+
+    def _create_group(self, name: str) -> None:
+        try:
+            gid = self.s.create_group(name)
+            self._open_conv("grp", gid)
+            self.status = (
+                f"group '{name.strip()}' created - invite with F4 or /ginvite USER"
+            )
+        except StoreError as exc:
+            self.status = f"error: {exc}"
+
+    def _invite_to_group(self, gid: str, name: str) -> None:
+        gname = self.s.config["groups"][gid]["name"]
+        try:
+            self.s.invite_group(gid, name)
+            self.status = f"group key pushed to {name} for #{gname}"
+        except StoreError as exc:
+            self.status = f"error: {exc}"
+
+    def _current_gid(self) -> Optional[str]:
+        """The open group, or the group selected in the sidebar."""
+        if self.active and self.active[0] == "grp":
+            return self.active[1]
+        if self.items and self.items[self.sel][0] == "grp":
+            return str(self.items[self.sel][1])
+        return None
+
     def _action_invite_contact(self, scr) -> None:
         users = [
             u
@@ -458,41 +536,50 @@ class App:
         name = self._prompt(scr, f"invite user to chat{hint}: ")
         if not name:
             return
-        try:
-            self.s.invite_contact(name.strip())
-            self.status = f"invite sent to {name.strip()} (your key was pushed)"
-        except StoreError as exc:
-            self.status = f"error: {exc}"
+        self._invite_contact(name.strip())
 
     def _action_create_group(self, scr) -> None:
         name = self._prompt(scr, "new group name: ")
         if not name:
             return
-        try:
-            gid = self.s.create_group(name.strip())
-            self._open_conv("grp", gid)
-            self.status = f"group '{name.strip()}' created - Ctrl-O to invite people"
-        except StoreError as exc:
-            self.status = f"error: {exc}"
+        self._create_group(name)
 
     def _action_invite_group(self, scr) -> None:
-        gid: Optional[str] = None
-        if self.active and self.active[0] == "grp":
-            gid = self.active[1]
-        elif self.items and self.items[self.sel][0] == "grp":
-            gid = str(self.items[self.sel][1])
+        gid = self._current_gid()
         if gid is None:
-            self.status = "open a group first, then Ctrl-O to invite"
+            self.status = "open a group first, then F4 (or /ginvite USER) to invite"
             return
         gname = self.s.config["groups"][gid]["name"]
         name = self._prompt(scr, f"invite user to #{gname}: ")
         if not name:
             return
-        try:
-            self.s.invite_group(gid, name.strip())
-            self.status = f"group key pushed to {name.strip()} for #{gname}"
-        except StoreError as exc:
-            self.status = f"error: {exc}"
+        self._invite_to_group(gid, name.strip())
+
+    # ---------------------------------------------------------- / commands
+    USAGE = "commands: /invite USER  /group NAME  /ginvite USER  /quit"
+
+    def _run_command(self, text: str) -> bool:
+        """Slash commands typed into the input line. These work in any
+        terminal, including ones whose host application swallows Ctrl or
+        function keys (e.g. the VS Code integrated terminal)."""
+        parts = text.split(None, 1)
+        cmd = parts[0].lower()
+        arg = parts[1].strip() if len(parts) > 1 else ""
+        if cmd in ("/quit", "/exit", "/q"):
+            return False
+        if cmd == "/invite" and arg:
+            self._invite_contact(arg)
+        elif cmd == "/group" and arg:
+            self._create_group(arg)
+        elif cmd == "/ginvite" and arg:
+            gid = self._current_gid()
+            if gid is None:
+                self.status = "open a group first, then /ginvite USER"
+            else:
+                self._invite_to_group(gid, arg)
+        else:
+            self.status = self.USAGE
+        return True
 
     # -------------------------------------------------------------- prompts
     def _prompt(self, scr, label: str) -> Optional[str]:
