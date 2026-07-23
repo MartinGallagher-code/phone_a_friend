@@ -15,8 +15,15 @@ import getpass
 import os
 import sys
 
-from . import __version__
+from . import __copyright__, __version__
 from .store import SharedDir, Session, StoreError
+
+VERSION_TEXT = f"""\
+phone_a_friend (paf) {__version__}
+{__copyright__}
+License: GPL-3.0-or-later <https://www.gnu.org/licenses/gpl-3.0.html>
+This is free software: you are free to change and redistribute it.
+There is no warranty, to the extent permitted by law."""
 
 
 def _shared_dir(args) -> SharedDir:
@@ -181,10 +188,9 @@ def main(argv=None) -> None:
     parser = argparse.ArgumentParser(
         prog="paf",
         description="phone_a_friend - encrypted chat over a shared directory",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
-        "--version", action="version", version=f"paf {__version__}"
-    )
+    parser.add_argument("--version", action="version", version=VERSION_TEXT)
     parser.add_argument("--dir", "-d", help="shared directory (or $PAF_DIR)")
     parser.add_argument("--user", "-u", help="username (or $PAF_USER)")
     parser.add_argument(
