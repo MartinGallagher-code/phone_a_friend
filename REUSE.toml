@@ -1,0 +1,8 @@
+version = 1
+SPDX-PackageName = "phone-a-friend"
+SPDX-PackageDownloadLocation = "https://github.com/MartinGallagher-code/phone_a_friend"
+
+[[annotations]]
+path = ["README.md"]
+SPDX-FileCopyrightText = "2026 Martin Gallagher"
+SPDX-License-Identifier = "GPL-3.0-or-later"

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Martin Gallagher
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Entry point: `python -m phone_a_friend` (or the `paf` script).
 
 By default launches the TUI. A few subcommands are provided for scripting
@@ -53,6 +57,15 @@ def _open_session(args) -> Session:
     return Session.register(shared, user, _passphrase(args, confirm=True))
 
 
+def _open_session_synced(args) -> Session:
+    """Open a session and consume pending invite replies first, so that
+    freshly accepted invites are usable immediately."""
+    session = _open_session(args)
+    for notice in session.process_replies():
+        print(f"* {notice}")
+    return session
+
+
 def cmd_tui(args) -> None:
     session = _open_session(args)
     from . import tui  # imported lazily: curses needs a real terminal
@@ -69,7 +82,7 @@ def cmd_register(args) -> None:
 
 
 def cmd_invite(args) -> None:
-    s = _open_session(args)
+    s = _open_session_synced(args)
     if args.group:
         gid = s.group_by_name(args.group)
         if gid is None:
@@ -82,9 +95,7 @@ def cmd_invite(args) -> None:
 
 
 def cmd_invites(args) -> None:
-    s = _open_session(args)
-    for notice in s.process_replies():
-        print(f"* {notice}")
+    s = _open_session_synced(args)
     invites = s.list_invites()
     if not invites:
         print("no pending invites")
@@ -100,7 +111,7 @@ def cmd_invites(args) -> None:
 
 
 def cmd_accept(args) -> None:
-    s = _open_session(args)
+    s = _open_session_synced(args)
     accepted = 0
     for fname, payload in s.list_invites():
         if args.sender in (None, payload["from"]):
@@ -111,13 +122,13 @@ def cmd_accept(args) -> None:
 
 
 def cmd_create_group(args) -> None:
-    s = _open_session(args)
+    s = _open_session_synced(args)
     gid = s.create_group(args.name)
     print(f"created group '{args.name}' ({gid})")
 
 
 def cmd_send(args) -> None:
-    s = _open_session(args)
+    s = _open_session_synced(args)
     if not args.group and not args.to:
         raise StoreError("specify --to USER or --group GROUP")
     if args.group:
@@ -131,7 +142,7 @@ def cmd_send(args) -> None:
 
 
 def cmd_read(args) -> None:
-    s = _open_session(args)
+    s = _open_session_synced(args)
     if not args.group and not args.to:
         raise StoreError("specify --to USER or --group GROUP")
     if args.group:
@@ -151,9 +162,7 @@ def cmd_read(args) -> None:
 
 
 def cmd_status(args) -> None:
-    s = _open_session(args)
-    for notice in s.process_replies():
-        print(f"* {notice}")
+    s = _open_session_synced(args)
     print(f"user: {s.name}")
     print("contacts:")
     for c in sorted(s.config["contacts"]):
