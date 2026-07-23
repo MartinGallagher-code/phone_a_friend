@@ -1,7 +1,7 @@
 # phone_a_friend
 
-[![PyPI](https://img.shields.io/pypi/v/phone-a-friend?label=PyPI)](https://pypi.org/project/phone-a-friend/)
-[![Python versions](https://img.shields.io/pypi/pyversions/phone-a-friend)](https://pypi.org/project/phone-a-friend/)
+[![PyPI](https://img.shields.io/pypi/v/phoneafriend?label=PyPI)](https://pypi.org/project/phoneafriend/)
+[![Python versions](https://img.shields.io/pypi/pyversions/phoneafriend)](https://pypi.org/project/phoneafriend/)
 [![CI](https://github.com/MartinGallagher-code/phone_a_friend/actions/workflows/ci.yml/badge.svg)](https://github.com/MartinGallagher-code/phone_a_friend/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/MartinGallagher-code/phone_a_friend/actions/workflows/ci.yml)
 [![REUSE status](https://api.reuse.software/badge/github.com/MartinGallagher-code/phone_a_friend)](https://api.reuse.software/info/github.com/MartinGallagher-code/phone_a_friend)
@@ -70,7 +70,7 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
 Requires Python ≥ 3.9 (Linux). From PyPI:
 
 ```bash
-pip install phone-a-friend     # installs the `paf` command
+pip install phoneafriend     # installs the `paf` command
 ```
 
 From a checkout:
