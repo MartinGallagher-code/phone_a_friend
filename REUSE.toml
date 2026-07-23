@@ -1,5 +1,5 @@
 version = 1
-SPDX-PackageName = "phone-a-friend"
+SPDX-PackageName = "phoneafriend"
 SPDX-PackageDownloadLocation = "https://github.com/MartinGallagher-code/phone_a_friend"
 
 [[annotations]]
