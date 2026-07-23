@@ -163,6 +163,9 @@ coverage run -m unittest discover -s tests && coverage report
 
 ## Releasing to PyPI
 
+The version is single-sourced from `__version__` in
+`phone_a_friend/__init__.py` — bump it there (and only there), then publish.
+
 Publishing is automated via `.github/workflows/publish.yml` using PyPI
 [trusted publishing](https://docs.pypi.org/trusted-publishers/) — no API
 token is stored in the repo. One-time setup on pypi.org: add a GitHub

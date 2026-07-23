@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phoneafriend"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Serverless encrypted chat over a shared Linux directory, with a curses TUI"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
@@ -37,6 +37,9 @@ paf = "phone_a_friend.__main__:main"
 
 [tool.setuptools]
 packages = ["phone_a_friend"]
+
+[tool.setuptools.dynamic]
+version = { attr = "phone_a_friend.__version__" }
 
 [tool.coverage.run]
 source = ["phone_a_friend"]
