@@ -36,6 +36,12 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
 * **Create groups and invite people** — each group has a random symmetric
   key; inviting someone pushes the group key to them (sealed to their public
   key). Any member can invite others.
+* **Unfriend and remove** — stop chatting with a contact (`/unfriend`); a
+  future invite rebuilds the friendship and the previous chat becomes
+  readable again. Any group member can remove another member (`/gremove`),
+  mirroring invites; removing yourself leaves the group. Removal is
+  cooperative: the removed client discards its keys when it sees the notice
+  (the group key is not rotated).
 * **See who's around** — registered users you have not connected with yet
   are listed under USERS in the left pane; select one to send a chat invite.
 * **Send/receive messages** to users or groups. The left-hand pane lists
@@ -112,6 +118,7 @@ In the TUI:
 | F2 or Ctrl-N  | invite a user to chat (pushes your public key)          |
 | F3 or Ctrl-G  | create a group                                          |
 | F4 or Ctrl-O  | invite a user to the open group (pushes the group key)  |
+| F10           | quit                                                    |
 | PgUp / PgDn   | scroll message history                                  |
 | Esc           | clear input line / quit                                 |
 
@@ -125,8 +132,10 @@ Ctrl-N/Ctrl-G/Ctrl-O itself):
 
 ```
 /invite USER     invite a user to chat
+/unfriend USER   stop chatting with a user (a new invite can restore it)
 /group NAME      create a group
 /ginvite USER    invite a user to the open (or selected) group
+/gremove USER    remove a user from the open (or selected) group
 /quit            exit
 ```
 
@@ -145,6 +154,9 @@ paf -d /srv/paf -u bob   read --to alice
 paf -d /srv/paf -u alice create-group "book club"
 paf -d /srv/paf -u alice invite bob --group "book club"
 paf -d /srv/paf -u alice send --group "book club" "welcome"
+paf -d /srv/paf -u alice remove bob            # unfriend
+paf -d /srv/paf -u alice remove bob --group "book club"
+paf -d /srv/paf -u alice remove alice --group "book club"   # leave
 paf -d /srv/paf -u bob   status                # contacts, groups, unread
 ```
 

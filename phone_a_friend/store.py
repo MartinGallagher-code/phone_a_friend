@@ -383,6 +383,47 @@ class Session:
         )
         self._discard(os.path.join(self.shared.invites_dir(self.name), fname))
 
+    def remove_contact(self, other: str) -> None:
+        """Unfriend: forget the contact's key and ask them to forget ours.
+
+        Message files are left in place — the pair key is derived from the
+        two static identity keys, so a future re-invite makes the old
+        conversation readable again."""
+        pub_b64 = self.config["contacts"].pop(other, None)
+        if pub_b64 is None:
+            raise StoreError(f"{other} is not a contact")
+        self.save_config()
+        self._drop_sealed(
+            self.shared.replies_dir(other),
+            pub_b64,
+            {"type": "contact_removed", "from": self.name},
+        )
+
+    def remove_group_member(self, gid: str, other: str) -> None:
+        """Remove a user from a group; any member can, mirroring invites.
+
+        Removing yourself leaves the group. Removal is cooperative: the
+        removed user's client discards the group key when it sees the
+        notice — the key itself is not rotated."""
+        group = self.config["groups"].get(gid)
+        if group is None:
+            raise StoreError("you are not a member of that group")
+        if other == self.name:
+            del self.config["groups"][gid]
+            self.save_config()
+            return
+        ident = self.shared.read_identity(other)
+        self._drop_sealed(
+            self.shared.replies_dir(other),
+            ident["pub"],
+            {
+                "type": "group_removed",
+                "from": self.name,
+                "group_id": gid,
+                "group_name": group["name"],
+            },
+        )
+
     def process_replies(self) -> List[str]:
         """Consume invite replies addressed to us; returns notice strings."""
         notices = []
@@ -420,6 +461,19 @@ class Session:
                 self._clear_pending("group", sender, payload.get("group_id"))
                 notices.append(f"{sender} declined a group invite")
                 changed = True
+            elif kind == "contact_removed":
+                if self.config["contacts"].pop(sender, None) is not None:
+                    notices.append(
+                        f"{sender} ended your chat - a new invite can restore it"
+                    )
+                    changed = True
+            elif kind == "group_removed":
+                group = self.config["groups"].pop(payload.get("group_id"), None)
+                if group is not None:
+                    notices.append(
+                        f"{sender} removed you from group '{group['name']}'"
+                    )
+                    changed = True
             self._discard(path)
         if changed:
             self.save_config()

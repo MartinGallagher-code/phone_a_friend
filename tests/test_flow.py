@@ -116,6 +116,81 @@ class FlowTest(unittest.TestCase):
             raw = fh.read()
         self.assertNotIn(b"secret stuff", raw)
 
+    def _pair(self):
+        """alice and bob, keys exchanged."""
+        a = Session.register(self.shared, "alice", "pw-a")
+        b = Session.register(self.shared, "bob", "pw-b")
+        a.invite_contact("bob")
+        fname, payload = b.list_invites()[0]
+        b.accept_invite(fname, payload)
+        a.process_replies()
+        return a, b
+
+    def test_unfriend_and_reinvite(self):
+        a, b = self._pair()
+        a.send_message("dm", "bob", "before the fallout")
+
+        with self.assertRaises(StoreError):
+            a.remove_contact("carol")
+
+        a.remove_contact("bob")
+        self.assertNotIn("bob", a.config["contacts"])
+        with self.assertRaises(StoreError):
+            a.send_message("dm", "bob", "nope")
+
+        notices = b.process_replies()
+        self.assertTrue(any("ended your chat" in n for n in notices))
+        self.assertNotIn("alice", b.config["contacts"])
+
+        # a future invite rebuilds the friendship...
+        b.invite_contact("alice")
+        fname, payload = a.list_invites()[0]
+        a.accept_invite(fname, payload)
+        b.process_replies()
+        self.assertIn("bob", a.config["contacts"])
+
+        # ...and the previous chat is readable again (same pair key)
+        files = a.list_message_files("dm", "bob")
+        texts = [m["text"] for m in a.load_messages("dm", "bob", files).values()]
+        self.assertIn("before the fallout", texts)
+
+    def test_mutual_unfriend_crossed_in_flight(self):
+        a, b = self._pair()
+        a.remove_contact("bob")
+        b.remove_contact("alice")
+        # each side already forgot the other: the notices are consumed silently
+        self.assertEqual(a.process_replies(), [])
+        self.assertEqual(b.process_replies(), [])
+
+    def test_group_remove_member(self):
+        a, b = self._pair()
+        gid = a.create_group("g")
+        a.invite_group(gid, "bob")
+        fname, payload = b.list_invites()[0]
+        b.accept_invite(fname, payload)
+        a.process_replies()
+
+        with self.assertRaises(StoreError):
+            b.remove_group_member("nogroup", "alice")
+
+        # any member can remove any other member - even the creator
+        b.remove_group_member(gid, "alice")
+        notices = a.process_replies()
+        self.assertTrue(any("removed you from group 'g'" in n for n in notices))
+        self.assertNotIn(gid, a.config["groups"])
+        with self.assertRaises(StoreError):
+            a.send_message("grp", gid, "nope")
+
+        # a stale second notice is consumed silently
+        b.remove_group_member(gid, "alice")
+        self.assertEqual(a.process_replies(), [])
+
+    def test_group_remove_self_leaves(self):
+        a, _ = self._pair()
+        gid = a.create_group("g")
+        a.remove_group_member(gid, "alice")
+        self.assertNotIn(gid, a.config["groups"])
+
     def test_decline_invite(self):
         a = Session.register(self.shared, "alice", "pw-a")
         b = Session.register(self.shared, "bob", "pw-b")
