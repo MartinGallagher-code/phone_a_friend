@@ -15,13 +15,13 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
 
 ```
 ┌─ INVITES ────────────┬─ chat with bob ────────────────────────────┐
-│ ✉ carol (chat)       │ 09:12 bob:   lunch?                        │
+│ ✉ carol (chat)      │ 09:12 bob:   lunch?                        │
 │ CHATS                │ 09:13 alice: sure - where?                 │
 │  bob                 │ 09:14 bob:   the usual                     │
 │  dave ●2             │                                            │
 │ GROUPS               │                                            │
 │  #book-club ●1       ├────────────────────────────────────────────┤
-│ USERS                │ > see you at noo▊                          │
+│ USERS                │ > see you at noo▊                         │
 │  + erin              │                                            │
 └──────────────────────┴────────────────────────────────────────────┘
 ```
