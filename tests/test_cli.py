@@ -54,6 +54,12 @@ class CliTest(unittest.TestCase):
         )
 
     # -------------------------------------------------------------- plumbing
+    def test_version_flag(self):
+        import phone_a_friend
+
+        out, _ = self.run_cli("--version", expect_exit=0)
+        self.assertEqual(out.strip(), f"paf {phone_a_friend.__version__}")
+
     def test_no_shared_dir(self):
         _, err = self.run_cli("-u", "alice", "status", expect_exit=2)
         self.assertIn("no shared directory", err)
