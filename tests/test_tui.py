@@ -182,6 +182,13 @@ class TuiTest(unittest.TestCase):
         # Esc -> confirm 'n': loop continues, then script dries up
         self.run_app(a, [ESC, "n", ENTER, -1])
 
+    def test_f10_quit_and_cancel(self):
+        a = Session.register(self.shared, "alice", "pw")
+        # F10 -> confirm 'n': loop continues, then script dries up
+        self.run_app(a, [curses.KEY_F10, "n", ENTER, -1])
+        # F10 -> confirm 'y': quits before the script dries up
+        self.run_app(a, [-1, curses.KEY_F10, "y", ENTER])
+
     def test_mousemask_unsupported(self):
         a = Session.register(self.shared, "alice", "pw")
         self.run_app(a, [-1], mousemask_fails=True)
@@ -352,6 +359,67 @@ class TuiTest(unittest.TestCase):
         app, scr = self.run_app(a, [ENTER, -1])
         self.assertIn("carol (invited...)", scr.rendered())
         self.assertIn("waiting for carol", app.status)
+
+    # ------------------------------------------------------------- removals
+    def test_unfriend_command_closes_active_chat(self):
+        a, b = self.make_pair()
+        keys = [ENTER] + list("/unfriend alice") + [ENTER, -1]
+        app, _ = self.run_app(b, keys)
+        self.assertNotIn("alice", b.config["contacts"])
+        self.assertIsNone(app.active)
+        self.assertIn("unfriended alice", app.status)
+        self.assertTrue(any("ended your chat" in n for n in a.process_replies()))
+
+    def test_unfriend_unknown_user(self):
+        a = Session.register(self.shared, "alice", "pw")
+        app, _ = self.run_app(a, list("/unfriend ghost") + [ENTER, -1])
+        self.assertIn("error", app.status)
+
+    def test_active_chat_closes_when_peer_unfriends(self):
+        a, b = self.make_pair()
+
+        def unfriend():
+            a.remove_contact("bob")
+            return -1
+
+        app, _ = self.run_app(b, [ENTER, unfriend, -1])
+        self.assertIsNone(app.active)
+        self.assertNotIn("alice", b.config["contacts"])
+
+    def test_gremove_command(self):
+        a, b = self.make_pair()
+        gid = b.create_group("g")
+        b.invite_group(gid, "alice")
+        fname, payload = a.list_invites()[0]
+        a.accept_invite(fname, payload)
+        b.process_replies()
+        # bob: move from the chat row to the group row, open it, remove alice
+        keys = [curses.KEY_DOWN, ENTER] + list("/gremove alice") + [ENTER, -1]
+        app, _ = self.run_app(b, keys)
+        self.assertIn("removal notice for #g pushed to alice", app.status)
+        self.assertTrue(any("removed you" in n for n in a.process_replies()))
+        self.assertNotIn(gid, a.config["groups"])
+
+    def test_gremove_self_leaves_group(self):
+        b = Session.register(self.shared, "bob", "pw")
+        gid = b.create_group("g")
+        keys = [ENTER] + list("/gremove bob") + [ENTER, -1]
+        app, _ = self.run_app(b, keys)
+        self.assertNotIn(gid, b.config["groups"])
+        self.assertIsNone(app.active)
+        self.assertIn("left group #g", app.status)
+
+    def test_gremove_needs_group(self):
+        b = Session.register(self.shared, "bob", "pw")
+        app, _ = self.run_app(b, list("/gremove x") + [ENTER, -1])
+        self.assertIn("open a group first", app.status)
+
+    def test_gremove_unknown_user(self):
+        b = Session.register(self.shared, "bob", "pw")
+        b.create_group("g")
+        keys = [ENTER] + list("/gremove ghost") + [ENTER, -1]
+        app, _ = self.run_app(b, keys)
+        self.assertIn("error", app.status)
 
     # ----------------------------------------------------------------- mouse
     def test_mouse_click_opens_conversation(self):

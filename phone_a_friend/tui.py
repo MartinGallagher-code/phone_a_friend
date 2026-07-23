@@ -17,6 +17,7 @@ Enter            open the selected item (or send, if the input line has text)
 F2 or Ctrl-N     invite a user to chat (pushes your public key to them)
 F3 or Ctrl-G     create a new group
 F4 or Ctrl-O     invite a user to the active group (pushes the group key)
+F10              quit
 PgUp/PgDn        scroll message history
 Esc              clear the input line / quit
 Mouse click      select + open items in the left pane
@@ -26,8 +27,10 @@ ones whose host application intercepts Ctrl or function keys, such as the
 VS Code integrated terminal (VS Code binds Ctrl-N/Ctrl-G/Ctrl-O itself):
 
 /invite USER     invite a user to chat
+/unfriend USER   stop chatting with a user (a new invite can restore it)
 /group NAME      create a group
 /ginvite USER    invite a user to the open (or selected) group
+/gremove USER    remove a user from the open (or selected) group
 /quit            exit
 
 The client polls the shared directory a few times per second; new messages
@@ -45,7 +48,7 @@ from typing import Dict, List, Optional, Tuple
 from .store import Session, StoreError
 
 POLL_MS = 400
-HELP = "F2/^N invite  F3/^G group  F4/^O g-invite  /quit quit  Enter open/send"
+HELP = "F2/^N invite  F3/^G group  F4/^O g-invite  F10 quit  Enter open/send"
 
 CP_HEADER = 1
 CP_SELECT = 2
@@ -118,7 +121,16 @@ class App:
 
         if self.active is not None:
             kind, target = self.active
-            self._fetch_active(kind, target)
+            # the peer may have unfriended us / removed us from the group
+            gone = (
+                target not in self.s.config["contacts"]
+                if kind == "dm"
+                else target not in self.s.config["groups"]
+            )
+            if gone:
+                self.active = None
+            else:
+                self._fetch_active(kind, target)
 
         self._rebuild_items()
 
@@ -290,9 +302,11 @@ class App:
                 "F2 or Ctrl-N   invite someone to chat by name",
                 "F3 or Ctrl-G   create a group",
                 "F4 or Ctrl-O   invite someone to the open group",
+                "F10            quit",
                 "",
                 "Or type a command into the input line:",
-                "/invite USER   /group NAME   /ginvite USER   /quit",
+                "/invite USER   /group NAME   /ginvite USER",
+                "/unfriend USER   /gremove USER   /quit",
                 "(commands always work, even in terminals that",
                 "swallow Ctrl or function keys, like VS Code)",
                 "",
@@ -406,6 +420,8 @@ class App:
         if ch in (15, curses.KEY_F4):  # Ctrl-O / F4
             self._action_invite_group(scr)
             return True
+        if ch == curses.KEY_F10:
+            return not self._confirm(scr, "Quit phone_a_friend? [y/N] ")
         if 32 <= ch < 0x110000 and ch != 127:
             self.input += chr(ch)
         return True
@@ -500,6 +516,30 @@ class App:
         except StoreError as exc:
             self.status = f"error: {exc}"
 
+    def _unfriend(self, name: str) -> None:
+        try:
+            self.s.remove_contact(name)
+        except StoreError as exc:
+            self.status = f"error: {exc}"
+            return
+        if self.active == ("dm", name):
+            self.active = None
+        self.status = f"unfriended {name} - a future invite can restore the chat"
+
+    def _remove_from_group(self, gid: str, name: str) -> None:
+        gname = self.s.config["groups"][gid]["name"]
+        try:
+            self.s.remove_group_member(gid, name)
+        except StoreError as exc:
+            self.status = f"error: {exc}"
+            return
+        if name == self.s.name:
+            if self.active == ("grp", gid):
+                self.active = None
+            self.status = f"left group #{gname}"
+        else:
+            self.status = f"removal notice for #{gname} pushed to {name}"
+
     def _create_group(self, name: str) -> None:
         try:
             gid = self.s.create_group(name)
@@ -556,7 +596,10 @@ class App:
         self._invite_to_group(gid, name.strip())
 
     # ---------------------------------------------------------- / commands
-    USAGE = "commands: /invite USER  /group NAME  /ginvite USER  /quit"
+    USAGE = (
+        "commands: /invite USER  /unfriend USER  /group NAME  "
+        "/ginvite USER  /gremove USER  /quit"
+    )
 
     def _run_command(self, text: str) -> bool:
         """Slash commands typed into the input line. These work in any
@@ -571,12 +614,20 @@ class App:
             self._invite_contact(arg)
         elif cmd == "/group" and arg:
             self._create_group(arg)
+        elif cmd == "/unfriend" and arg:
+            self._unfriend(arg)
         elif cmd == "/ginvite" and arg:
             gid = self._current_gid()
             if gid is None:
                 self.status = "open a group first, then /ginvite USER"
             else:
                 self._invite_to_group(gid, arg)
+        elif cmd == "/gremove" and arg:
+            gid = self._current_gid()
+            if gid is None:
+                self.status = "open a group first, then /gremove USER"
+            else:
+                self._remove_from_group(gid, arg)
         else:
             self.status = self.USAGE
         return True

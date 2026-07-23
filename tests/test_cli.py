@@ -210,6 +210,42 @@ class CliTest(unittest.TestCase):
         )
         self.assertIn("#book club", out)
 
+    def test_remove_contact_and_group(self):
+        shared = SharedDir(self.tmp)
+        self.register("alice", "pw-a")
+        self.register("bob", "pw-b")
+        a = Session.login(shared, "alice", "pw-a")
+        b = Session.login(shared, "bob", "pw-b")
+        a.invite_contact("bob")
+        fname, payload = b.list_invites()[0]
+        b.accept_invite(fname, payload)
+        a.process_replies()
+        gid = a.create_group("g")
+        a.invite_group(gid, "bob")
+        fname, payload = b.list_invites()[0]
+        b.accept_invite(fname, payload)
+
+        out, _ = self.run_cli(
+            "-d", self.tmp, "-u", "alice", "--passphrase", "pw-a",
+            "remove", "bob", "--group", "g",
+        )
+        self.assertIn("removal notice for 'g' pushed to bob", out)
+        _, err = self.run_cli(
+            "-d", self.tmp, "-u", "alice", "--passphrase", "pw-a",
+            "remove", "bob", "--group", "nope", expect_exit=1,
+        )
+        self.assertIn("unknown group", err)
+        out, _ = self.run_cli(
+            "-d", self.tmp, "-u", "alice", "--passphrase", "pw-a",
+            "remove", "alice", "--group", "g",
+        )
+        self.assertIn("left group 'g'", out)
+        out, _ = self.run_cli(
+            "-d", self.tmp, "-u", "alice", "--passphrase", "pw-a",
+            "remove", "bob",
+        )
+        self.assertIn("unfriended bob", out)
+
     def test_invites_empty_and_accept_nothing(self):
         self.register("alice")
         out, _ = self.run_cli(

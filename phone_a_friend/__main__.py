@@ -102,6 +102,22 @@ def cmd_invite(args) -> None:
         print(f"chat invite (with your public key) pushed to {args.to}")
 
 
+def cmd_remove(args) -> None:
+    s = _open_session_synced(args)
+    if args.group:
+        gid = s.group_by_name(args.group)
+        if gid is None:
+            raise StoreError(f"unknown group: {args.group}")
+        s.remove_group_member(gid, args.to)
+        if args.to == s.name:
+            print(f"left group '{args.group}'")
+        else:
+            print(f"removal notice for '{args.group}' pushed to {args.to}")
+    else:
+        s.remove_contact(args.to)
+        print(f"unfriended {args.to} - a future invite can restore the chat")
+
+
 def cmd_invites(args) -> None:
     s = _open_session_synced(args)
     invites = s.list_invites()
@@ -204,6 +220,13 @@ def main(argv=None) -> None:
     p = sub.add_parser("invite", help="invite a user to chat or to a group")
     p.add_argument("to")
     p.add_argument("--group", "-g", help="push this group's key instead")
+    p = sub.add_parser(
+        "remove", help="unfriend a user, or remove a user from a group"
+    )
+    p.add_argument("to")
+    p.add_argument(
+        "--group", "-g", help="remove from this group instead (yourself = leave)"
+    )
     sub.add_parser("invites", help="list incoming invites")
     p = sub.add_parser("accept", help="accept pending invites")
     p.add_argument("--from", dest="sender", help="only invites from this user")
@@ -225,6 +248,7 @@ def main(argv=None) -> None:
         "tui": cmd_tui,
         "register": cmd_register,
         "invite": cmd_invite,
+        "remove": cmd_remove,
         "invites": cmd_invites,
         "accept": cmd_accept,
         "create-group": cmd_create_group,
