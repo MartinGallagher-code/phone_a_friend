@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phone-a-friend"
+version = "0.1.0"
+description = "Serverless encrypted chat over a shared Linux directory, with a curses TUI"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = ["cryptography>=3.4"]
+
+[project.scripts]
+paf = "phone_a_friend.__main__:main"
+
+[tool.setuptools]
+packages = ["phone_a_friend"]
