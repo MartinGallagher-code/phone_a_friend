@@ -8,30 +8,30 @@ Left pane: invites, chats (contacts), groups, and registered users you have
 not connected with yet, with unread indicators.
 Right pane: the active conversation plus an input line.
 
-Keys
-----
-Up/Down          select an item in the left pane
-Enter            open the selected item (or send, if the input line has text)
-                 on an invite: prompts to accept/decline
-                 on a user under USERS: prompts to send them a chat invite
-F2 or Ctrl-N     invite a user to chat (pushes your public key to them)
-F3 or Ctrl-G     create a new group
-F4 or Ctrl-O     invite a user to the active group (pushes the group key)
-F10              quit
-PgUp/PgDn        scroll message history
-Esc              clear the input line / quit
-Mouse click      select + open items in the left pane
+Keys::
+
+    Up/Down          select an item in the left pane
+    Enter            open the selected item (or send, if the input line has
+                     text); on an invite: prompts to accept/decline; on a
+                     user under USERS: prompts to send them a chat invite
+    F2 or Ctrl-N     invite a user to chat (pushes your public key to them)
+    F3 or Ctrl-G     create a new group
+    F4 or Ctrl-O     invite a user to the active group (pushes the group key)
+    F10              quit
+    PgUp/PgDn        scroll message history
+    Esc              clear the input line / quit
+    Mouse click      select + open items in the left pane
 
 Slash commands typed into the input line work in any terminal - including
 ones whose host application intercepts Ctrl or function keys, such as the
-VS Code integrated terminal (VS Code binds Ctrl-N/Ctrl-G/Ctrl-O itself):
+VS Code integrated terminal (VS Code binds Ctrl-N/Ctrl-G/Ctrl-O itself)::
 
-/invite USER     invite a user to chat
-/unfriend USER   stop chatting with a user (a new invite can restore it)
-/group NAME      create a group
-/ginvite USER    invite a user to the open (or selected) group
-/gremove USER    remove a user from the open (or selected) group
-/quit            exit
+    /invite USER     invite a user to chat
+    /unfriend USER   stop chatting with a user (a new invite can restore it)
+    /group NAME      create a group
+    /ginvite USER    invite a user to the open (or selected) group
+    /gremove USER    remove a user from the open (or selected) group
+    /quit            exit
 
 The client polls the shared directory a few times per second; new messages
 in the active conversation appear immediately, others light up an unread

@@ -3,11 +3,13 @@
 [![PyPI](https://img.shields.io/pypi/v/phoneafriend?label=PyPI)](https://pypi.org/project/phoneafriend/)
 [![Python versions](https://img.shields.io/pypi/pyversions/phoneafriend)](https://pypi.org/project/phoneafriend/)
 [![CI](https://github.com/MartinGallagher-code/phone_a_friend/actions/workflows/ci.yml/badge.svg)](https://github.com/MartinGallagher-code/phone_a_friend/actions/workflows/ci.yml)
+[![Documentation Status](https://readthedocs.org/projects/phoneafriend/badge/?version=latest)](https://phoneafriend.readthedocs.io/en/latest/)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/MartinGallagher-code/phone_a_friend/actions/workflows/ci.yml)
 [![REUSE status](https://api.reuse.software/badge/github.com/MartinGallagher-code/phone_a_friend)](https://api.reuse.software/info/github.com/MartinGallagher-code/phone_a_friend)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 
 **Website:** <https://martingallagher-code.github.io/phone_a_friend/>
+**Documentation:** <https://phoneafriend.readthedocs.io/>
 
 Serverless, end-to-end-encrypted chat for people who share access to the same
 Linux directory (an NFS mount, a group-writable `/srv/chat`, a shared home

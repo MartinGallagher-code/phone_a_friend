@@ -2,12 +2,5 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-__pycache__/
-*.pyc
-*.egg-info/
-build/
-dist/
-.venv/
-venv/
-.coverage
-docs/_build/
+sphinx>=7.0
+sphinx-rtd-theme>=2.0
