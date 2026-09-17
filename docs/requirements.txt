@@ -1,6 +1,5 @@
-# SPDX-FileCopyrightText: 2026 Martin Gallagher
-#
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Martin J. Gallagher
 
 sphinx>=7.0
 sphinx-rtd-theme>=2.0

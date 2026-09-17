@@ -1,5 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Martin Gallagher
-#
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Martin J. Gallagher
 
 cryptography>=3.4

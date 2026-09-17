@@ -6,7 +6,7 @@
 [![Documentation Status](https://readthedocs.org/projects/phoneafriend/badge/?version=latest)](https://phoneafriend.readthedocs.io/en/latest/)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/MartinGallagher-code/phone_a_friend/actions/workflows/ci.yml)
 [![REUSE status](https://api.reuse.software/badge/github.com/MartinGallagher-code/phone_a_friend)](https://api.reuse.software/info/github.com/MartinGallagher-code/phone_a_friend)
-[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 **Website:** <https://martingallagher-code.github.io/phone_a_friend/>
 **Documentation:** <https://phoneafriend.readthedocs.io/>
@@ -189,13 +189,6 @@ publisher for `MartinGallagher-code/phone_a_friend`, workflow
 `publish.yml`, environment `pypi`. Then creating a GitHub release (e.g.
 tag `v0.1.0`) builds, checks, and uploads the sdist and wheel.
 
-## Licensing
-
-Licensed under GPL-3.0-or-later. The repository is compliant with the
-[REUSE Specification](https://reuse.software/): every file carries SPDX
-copyright and license information, and license texts live in `LICENSES/`.
-Compliance is checked in CI with `reuse lint`.
-
 ## Shared-directory layout
 
 ```
@@ -208,3 +201,25 @@ Compliance is checked in CI with `reuse lint`.
   groups/<gid>/meta.json         public group metadata
   groups/<gid>/msgs/<...>.json   group messages, group-key encrypted
 ```
+
+## License
+
+Copyright (C) 2026 Martin J. Gallagher
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program. If not, see <https://www.gnu.org/licenses/>.
+
+Full text: the `LICENSE` file at the repository root, or
+<https://www.gnu.org/licenses/gpl-3.0.html> — SPDX identifier
+`GPL-3.0-or-later`. This repository follows the
+[REUSE Specification](https://reuse.software/): source files carry SPDX
+copyright and licence headers, and the licence text lives in `LICENSES/`.

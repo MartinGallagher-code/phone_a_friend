@@ -1,14 +1,13 @@
-# SPDX-FileCopyrightText: 2026 Martin Gallagher
-#
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Martin J. Gallagher
 
 """Sphinx configuration for the phone_a_friend documentation."""
 
 from phone_a_friend import __version__
 
 project = "phone_a_friend"
-copyright = "2026 Martin Gallagher"
-author = "Martin Gallagher"
+copyright = "2026, Martin J. Gallagher"
+author = "Martin J. Gallagher"
 version = __version__
 release = __version__
 
