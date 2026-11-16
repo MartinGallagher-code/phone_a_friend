@@ -319,7 +319,7 @@ footer .quality span b { color: var(--green); }
     <div class="prop">
       <span class="ico">⌨️</span>
       <h3>Terminal native</h3>
-      <p>A fast curses TUI with mouse support, unread badges, invites and groups — plus slash commands for terminals that swallow Ctrl keys, and a full CLI for scripting every operation headlessly. Python ≥ 3.9, one dependency.</p>
+      <p>A fast curses TUI with full mouse support (click, double-click, right-click menus, the wheel, a clickable key bar), unread badges, invites and groups — plus slash commands for terminals that swallow Ctrl keys, and a full CLI for scripting every operation headlessly. Python ≥ 3.9, one dependency.</p>
     </div>
   </div>
 </section>
@@ -328,7 +328,7 @@ footer .quality span b { color: var(--green); }
   <div class="inner">
     <p class="kicker">Screenshots</p>
     <h2>The TUI, exactly as it runs</h2>
-    <p class="lead">These are <b>real captures</b> of <code>paf</code> running against a live shared directory — invites, unread badges, groups and all. Left pane: invites, chats, groups, and registered users you haven't connected with yet. Right pane: the open conversation and input line.</p>
+    <p class="lead">These are <b>real captures</b> of <code>paf</code> running against a live shared directory — invites, unread badges, groups and all. Left pane: invites, chats, groups, and registered users you haven't connected with yet. Right pane: the open conversation and input line. Along the bottom: a status line, and a key bar you can click.</p>
     <div class="tabs" id="shotTabs">
       <button class="on" data-shot="0">welcome screen</button>
       <button data-shot="1">direct message</button>
@@ -338,48 +338,48 @@ footer .quality span b { color: var(--green); }
     <div class="shot on" id="shot0">
       <div class="termwin">
         <div class="termbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">paf --dir /srv/paf</span></div>
-        <div class="termbody"><pre class="term"><span class="t-b"></span><span class="t-b t-cyn">INVITES</span>                  │ <span class="t-b">phone_a_friend</span>
-<span class="t-blk"></span><span class="t-blk b-cyn"> ✉ carol (chat)         </span><span class="b-cyn"></span> │ ────────────────────────────────────────────────────────────────────────
-<span class="t-b"></span><span class="t-b t-cyn">CHATS</span>                    │
+        <div class="termbody"><pre class="term"><span class="t-b t-cyn">INVITES</span>                  │ <span class="t-b">phone_a_friend</span>
+<span class="t-blk b-cyn"> ✉ carol (chat)         </span> │ ────────────────────────────────────────────────────────────────────────
+<span class="t-b t-cyn">CHATS</span>                    │
   bob                    │
-<span class="t-b"></span><span class="t-b t-yel">  dave ●2</span>                │
-<span class="t-b"></span><span class="t-b t-cyn">GROUPS</span>                   │
-<span class="t-b"></span><span class="t-b t-yel">  #book-club ●1</span>          │ Welcome! Select a chat or group on the left.
-<span class="t-b"></span><span class="t-b t-cyn">USERS</span>                    │
-<span class="t-blu"> + carol</span>                 │ Registered users you have not connected with
-<span class="t-blu"> + erin</span>                  │ appear under USERS - select one and press
-                         │ Enter to send them a chat invite.
+<span class="t-b t-yel">  dave ●2</span>                │
+<span class="t-b t-cyn">GROUPS</span>                   │
+<span class="t-b t-yel">  #book-club ●1</span>          │ Welcome! Select a chat or group on the left.
+<span class="t-b t-cyn">USERS</span>                    │
+<span class="t-blu"> + carol</span>                 │ Click a chat or group to open it. Double-click
+<span class="t-blu"> + erin</span>                  │ an invite to answer it, or a name under USERS
+                         │ to invite them to chat. Right-click (or F9)
+                         │ for a menu of what you can do with an item.
                          │
+                         │ F1 or /help    keys, mouse and commands
                          │ F2 or Ctrl-N   invite someone to chat by name
                          │ F3 or Ctrl-G   create a group
                          │ F4 or Ctrl-O   invite someone to the open group
-                         │ F10            quit
                          │
-                         │ Or type a command into the input line:
-                         │ /invite USER   /group NAME   /ginvite USER
-                         │ /unfriend USER   /gremove USER   /quit
-                         │ (commands always work, even in terminals that
-                         │ swallow Ctrl or function keys, like VS Code)
+                         │ Commands typed into the input line, such as
+                         │ /invite USER or /group NAME, work even in
+                         │ terminals that swallow Ctrl or function keys.
                          │
                          │ Invites push public keys: without an accepted
                          │ invite, messages cannot be decrypted.
                          │ ────────────────────────────────────────────────────────────────────────
                          │
-<span class="t-blk"></span><span class="t-blk b-wht"> logged in as alice - F2/^N invite  F3/^G group  F4/^O g-invite  F10 quit  Enter open/send         </span><span class="b-wht"></span></pre></div>
+<span class="t-blk b-wht"> logged in as alice - Enter open/send  F1 help  F9 or right-click: menu</span><span class="b-wht">                            </span>
+<span class="t-b">1</span><span class="t-blk b-cyn">Help           </span><span class="t-b">2</span><span class="t-blk b-cyn">Invite         </span><span class="t-b">3</span><span class="t-blk b-cyn">Group          </span><span class="t-b">4</span><span class="t-blk b-cyn">GInvite        </span><span class="t-b">9</span><span class="t-blk b-cyn">Menu           </span><span class="t-b">10</span><span class="t-blk b-cyn">Quit             </span></pre></div>
       </div>
-      <p class="caption">First screen after logging in. A pending invite from <code>carol</code>, unread badges on <code>dave ●2</code> and <code>#book-club ●1</code>, and users you can invite under <code>USERS</code>.</p>
+      <p class="caption">First screen after logging in. A pending invite from <code>carol</code>, unread badges on <code>dave ●2</code> and <code>#book-club ●1</code>, and users you can invite under <code>USERS</code>. Click a chat or group to open it, right-click anything for a menu of what you can do with it, and click the keys on the bottom row.</p>
     </div>
     <div class="shot" id="shot1">
       <div class="termwin">
         <div class="termbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">paf --dir /srv/paf — chat with bob</span></div>
-        <div class="termbody"><pre class="term"><span class="t-b"></span><span class="t-b t-cyn">INVITES</span>                  │ <span class="t-b">chat with bob</span>
-<span class="t-b"></span><span class="t-b t-yel"> ✉ carol (chat)</span>          │ ────────────────────────────────────────────────────────────────────────
-<span class="t-b"></span><span class="t-b t-cyn">CHATS</span>                    │
-<span class="t-blk"></span><span class="t-blk b-cyn">  bob                   </span><span class="b-cyn"></span> │
-<span class="t-b"></span><span class="t-b t-yel">  dave ●2</span>                │
-<span class="t-b"></span><span class="t-b t-cyn">GROUPS</span>                   │
-<span class="t-b"></span><span class="t-b t-yel">  #book-club ●1</span>          │
-<span class="t-b"></span><span class="t-b t-cyn">USERS</span>                    │
+        <div class="termbody"><pre class="term"><span class="t-b t-cyn">INVITES</span>                  │ <span class="t-b">chat with bob</span>
+<span class="t-b t-yel"> ✉ carol (chat)</span>          │ ────────────────────────────────────────────────────────────────────────
+<span class="t-b t-cyn">CHATS</span>                    │
+<span class="t-blk b-cyn">  bob</span><span class="b-cyn">                   </span> │
+<span class="t-b t-yel">  dave ●2</span>                │
+<span class="t-b t-cyn">GROUPS</span>                   │
+<span class="t-b t-yel">  #book-club ●1</span>          │
+<span class="t-b t-cyn">USERS</span>                    │
 <span class="t-blu"> + carol</span>                 │
 <span class="t-blu"> + erin</span>                  │
                          │
@@ -392,28 +392,28 @@ footer .quality span b { color: var(--green); }
                          │
                          │
                          │
-                         │
-                         │ <span class="t-b">19:16 bob: lunch?</span>
-                         │ <span class="t-grn">19:16 alice: sure - where?</span>
-                         │ <span class="t-b">19:16 bob: the usual</span>
-                         │ <span class="t-grn">19:16 alice: see you at noon</span>
+                         │ <span class="t-b">19:44 bob: lunch?</span>
+                         │ <span class="t-grn">19:44 alice: sure - where?</span>
+                         │ <span class="t-b">19:44 bob: the usual</span>
+                         │ <span class="t-grn">19:44 alice: see you at noon</span>
                          │ ────────────────────────────────────────────────────────────────────────
                          │ &gt; see you at the usual place at noon
-<span class="t-blk"></span><span class="t-blk b-wht"> F2/^N invite  F3/^G group  F4/^O g-invite  F10 quit  Enter open/send                              </span><span class="b-wht"></span></pre></div>
+<span class="t-blk b-wht"> Enter open/send  F1 help  F9 or right-click: menu</span><span class="b-wht">                                                 </span>
+<span class="t-b">1</span><span class="t-blk b-cyn">Help           </span><span class="t-b">2</span><span class="t-blk b-cyn">Invite         </span><span class="t-b">3</span><span class="t-blk b-cyn">Group          </span><span class="t-b">4</span><span class="t-blk b-cyn">GInvite        </span><span class="t-b">9</span><span class="t-blk b-cyn">Menu           </span><span class="t-b">10</span><span class="t-blk b-cyn">Quit             </span></pre></div>
       </div>
       <p class="caption">An open direct-message conversation. Every message in this thread is encrypted with a key only <code>alice</code> and <code>bob</code> can derive. New messages appear in place a few hundred milliseconds after the other side hits Enter.</p>
     </div>
     <div class="shot" id="shot2">
       <div class="termwin">
         <div class="termbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">paf --dir /srv/paf — #book-club</span></div>
-        <div class="termbody"><pre class="term"><span class="t-b"></span><span class="t-b t-cyn">INVITES</span>                  │ <span class="t-b">#book-club</span>
-<span class="t-b"></span><span class="t-b t-yel"> ✉ carol (chat)</span>          │ ────────────────────────────────────────────────────────────────────────
-<span class="t-b"></span><span class="t-b t-cyn">CHATS</span>                    │
+        <div class="termbody"><pre class="term"><span class="t-b t-cyn">INVITES</span>                  │ <span class="t-b">#book-club</span>
+<span class="t-b t-yel"> ✉ carol (chat)</span>          │ ────────────────────────────────────────────────────────────────────────
+<span class="t-b t-cyn">CHATS</span>                    │
   bob                    │
-<span class="t-b"></span><span class="t-b t-yel">  dave ●2</span>                │
-<span class="t-b"></span><span class="t-b t-cyn">GROUPS</span>                   │
-<span class="t-blk"></span><span class="t-blk b-cyn">  #book-club            </span><span class="b-cyn"></span> │
-<span class="t-b"></span><span class="t-b t-cyn">USERS</span>                    │
+<span class="t-b t-yel">  dave ●2</span>                │
+<span class="t-b t-cyn">GROUPS</span>                   │
+<span class="t-blk b-cyn">  #book-club            </span> │
+<span class="t-b t-cyn">USERS</span>                    │
 <span class="t-blu"> + carol</span>                 │
 <span class="t-blu"> + erin</span>                  │
                          │
@@ -429,25 +429,25 @@ footer .quality span b { color: var(--green); }
                          │
                          │
                          │
-                         │
-                         │ <span class="t-b">19:16 bob: chapter 4 tonight?</span>
+                         │ <span class="t-b">19:44 bob: chapter 4 tonight?</span>
                          │ ────────────────────────────────────────────────────────────────────────
                          │ &gt;
-<span class="t-blk"></span><span class="t-blk b-wht"> F2/^N invite  F3/^G group  F4/^O g-invite  F10 quit  Enter open/send                              </span><span class="b-wht"></span></pre></div>
+<span class="t-blk b-wht"> Enter open/send  F1 help  F9 or right-click: menu</span><span class="b-wht">                                                 </span>
+<span class="t-b">1</span><span class="t-blk b-cyn">Help           </span><span class="t-b">2</span><span class="t-blk b-cyn">Invite         </span><span class="t-b">3</span><span class="t-blk b-cyn">Group          </span><span class="t-b">4</span><span class="t-blk b-cyn">GInvite        </span><span class="t-b">9</span><span class="t-blk b-cyn">Menu           </span><span class="t-b">10</span><span class="t-blk b-cyn">Quit             </span></pre></div>
       </div>
       <p class="caption">A group conversation. Each group has its own random symmetric key, held only by members who accepted an invite. Any member can invite (<code>F4</code> / <code>/ginvite</code>) or remove (<code>/gremove</code>) others.</p>
     </div>
     <div class="shot" id="shot3">
       <div class="termwin">
         <div class="termbar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">paf --dir /srv/paf — invite from carol</span></div>
-        <div class="termbody"><pre class="term"><span class="t-b"></span><span class="t-b t-cyn">INVITES</span>                  │ <span class="t-b">#book-club</span>
-<span class="t-blk"></span><span class="t-blk b-cyn"> ✉ carol (chat)         </span><span class="b-cyn"></span> │ ────────────────────────────────────────────────────────────────────────
-<span class="t-b"></span><span class="t-b t-cyn">CHATS</span>                    │
+        <div class="termbody"><pre class="term"><span class="t-b t-cyn">INVITES</span>                  │ <span class="t-b">#book-club</span>
+<span class="t-b t-yel"> ✉ carol (chat)</span>          │ ────────────────────────────────────────────────────────────────────────
+<span class="t-b t-cyn">CHATS</span>                    │
   bob                    │
-<span class="t-b"></span><span class="t-b t-yel">  dave ●2</span>                │
-<span class="t-b"></span><span class="t-b t-cyn">GROUPS</span>                   │
-  #book-club             │
-<span class="t-b"></span><span class="t-b t-cyn">USERS</span>                    │
+<span class="t-b t-yel">  dave ●2</span>                │
+<span class="t-b t-cyn">GROUPS</span>                   │
+<span class="t-blk b-cyn">  #book-club            </span> │
+<span class="t-b t-cyn">USERS</span>                    │
 <span class="t-blu"> + carol</span>                 │
 <span class="t-blu"> + erin</span>                  │
                          │
@@ -463,13 +463,13 @@ footer .quality span b { color: var(--green); }
                          │
                          │
                          │
-                         │
-                         │ <span class="t-b">19:16 bob: chapter 4 tonight?</span>
+                         │ <span class="t-b">19:44 bob: chapter 4 tonight?</span>
                          │ ────────────────────────────────────────────────────────────────────────
                          │ &gt;
-<span class="t-blk"></span><span class="t-blk b-wht"> chat invite from carol - accept? [y=yes / n=decline / Esc]                                        </span><span class="b-wht"></span></pre></div>
+<span class="t-blk b-wht"> chat invite from carol - accept? [y=yes / n=decline / Esc] </span><span class="b-wht">                                       </span>
+<span class="t-b">1</span><span class="t-blk b-cyn">Help           </span><span class="t-b">2</span><span class="t-blk b-cyn">Invite         </span><span class="t-b">3</span><span class="t-blk b-cyn">Group          </span><span class="t-b">4</span><span class="t-blk b-cyn">GInvite        </span><span class="t-b">9</span><span class="t-blk b-cyn">Menu           </span><span class="t-b">10</span><span class="t-blk b-cyn">Quit             </span></pre></div>
       </div>
-      <p class="caption">Accepting an invite is the key exchange: carol's invite pushed her public key to alice; pressing <code>y</code> pushes alice's public key back. Without an accepted exchange, messages can't be sent or decrypted.</p>
+      <p class="caption">Double-click an invite (or select it and press <code>Enter</code>) to answer it. Accepting an invite is the key exchange: carol's invite pushed her public key to alice; pressing <code>y</code> pushes alice's public key back. Without an accepted exchange, messages can't be sent or decrypted.</p>
     </div>
     <p class="realnote">Captured from a genuine session: five users registered in a shared directory, invites exchanged, messages sent — all through the real client.</p>
   </div>
@@ -620,13 +620,20 @@ footer .quality span b { color: var(--green); }
       <h3 style="margin-bottom:.8rem">Keys</h3>
       <table>
         <tr><th>Key</th><th>Action</th></tr>
-        <tr><td><code>↑ ↓ / click</code></td><td>select chat, group, user or invite</td></tr>
+        <tr><td><code>↑ ↓</code></td><td>select chat, group, user or invite</td></tr>
         <tr><td><code>Enter</code></td><td>open selection — or send, if the input has text</td></tr>
+        <tr><td><code>F1</code></td><td>help: keys, mouse and commands</td></tr>
         <tr><td><code>F2 / Ctrl-N</code></td><td>invite a user to chat</td></tr>
         <tr><td><code>F3 / Ctrl-G</code></td><td>create a group</td></tr>
         <tr><td><code>F4 / Ctrl-O</code></td><td>invite a user to the open group</td></tr>
+        <tr><td><code>F9</code></td><td>menu of the selected item's actions</td></tr>
         <tr><td><code>PgUp / PgDn</code></td><td>scroll message history</td></tr>
+        <tr><td><code>← → Home End</code></td><td>edit the input line (also <code>Ctrl-A</code> / <code>Ctrl-E</code>)</td></tr>
         <tr><td><code>F10</code></td><td>quit</td></tr>
+        <tr><td><code>click</code></td><td>open a chat or group; select an invite or user</td></tr>
+        <tr><td><code>double-click</code></td><td>open or act on anything: answer an invite, invite a user</td></tr>
+        <tr><td><code>right-click</code></td><td>menu of the item's actions</td></tr>
+        <tr><td><code>wheel</code></td><td>scroll the conversation or the list under the pointer</td></tr>
       </table>
     </div>
     <div>
@@ -638,6 +645,9 @@ footer .quality span b { color: var(--green); }
         <tr><td><code>/group NAME</code></td><td>create a group</td></tr>
         <tr><td><code>/ginvite USER</code></td><td>invite a user to the open group</td></tr>
         <tr><td><code>/gremove USER</code></td><td>remove a user from the open group</td></tr>
+        <tr><td><code>/leave</code></td><td>leave the open group</td></tr>
+        <tr><td><code>/menu</code></td><td>menu of the selected item's actions (as <code>F9</code>)</td></tr>
+        <tr><td><code>/help</code></td><td>help (as <code>F1</code>)</td></tr>
         <tr><td><code>/quit</code></td><td>exit</td></tr>
       </table>
     </div>
