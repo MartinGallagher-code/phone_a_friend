@@ -27,7 +27,10 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
 │  #book-club ●1       ├────────────────────────────────────────────┤
 │ USERS                │ > see you at noo▊                         │
 │  + erin              │                                            │
-└──────────────────────┴────────────────────────────────────────────┘
+├──────────────────────┴────────────────────────────────────────────┤
+│ Enter open/send  F1 help  F9 or right-click: menu                 │
+│ 1Help  2Invite  3Group  4GInvite  9Menu  10Quit                   │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 ## Features
@@ -47,12 +50,17 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
   cooperative: the removed client discards its keys when it sees the notice
   (the group key is not rotated).
 * **See who's around** — registered users you have not connected with yet
-  are listed under USERS in the left pane; select one to send a chat invite.
+  are listed under USERS in the left pane; double-click one (or select it
+  and press Enter) to send a chat invite.
 * **Send/receive messages** to users or groups. The left-hand pane lists
-  invites, chats and groups; click (mouse supported) or use ↑/↓ + Enter to
-  open one and read its messages. New messages in the open conversation
-  appear immediately; elsewhere an unread badge (`●3`) lights up next to the
-  chat or group.
+  invites, chats and groups; click one, or use ↑/↓ + Enter, to open it and
+  read its messages. New messages in the open conversation appear
+  immediately; elsewhere an unread badge (`●3`) lights up next to the chat or
+  group. Type in any language: accents, CJK and emoji go in exactly as typed,
+  and the input line can be edited (←/→, Home/End, Delete).
+* **Mouse, as in Meridian Commander** — click, double-click, right-click for
+  a menu of what you can do with a chat, group, invite or user, the wheel to
+  scroll, and a key bar along the bottom whose keys you can click.
 * **Encrypted per-user config** — each client maintains its user's config
   file (private key, contact keys, group keys, read state) in the shared
   directory, encrypted with a key derived from the passphrase (scrypt +
@@ -115,19 +123,58 @@ PAF_DIR=/srv/paf paf               # same, via environment variable
 
 In the TUI:
 
-| Key           | Action                                                  |
-|---------------|---------------------------------------------------------|
-| ↑ / ↓ / click | select a chat, group, user or invite in the left pane   |
-| Enter         | open selection — or send, if the input line has text    |
-| F2 or Ctrl-N  | invite a user to chat (pushes your public key)          |
-| F3 or Ctrl-G  | create a group                                          |
-| F4 or Ctrl-O  | invite a user to the open group (pushes the group key)  |
-| F10           | quit                                                    |
-| PgUp / PgDn   | scroll message history                                  |
-| Esc           | clear input line / quit                                 |
+| Key                | Action                                                 |
+|--------------------|--------------------------------------------------------|
+| ↑ / ↓              | select a chat, group, user or invite in the left pane  |
+| Enter              | open selection — or send, if the input line has text   |
+| F1                 | help: the keys, the mouse and the slash commands       |
+| F2 or Ctrl-N       | invite a user to chat (pushes your public key)         |
+| F3 or Ctrl-G       | create a group                                         |
+| F4 or Ctrl-O       | invite a user to the open group (pushes the group key) |
+| F9                 | a menu of the selected item's actions                  |
+| F10                | quit                                                   |
+| PgUp / PgDn        | scroll message history                                 |
+| ← / →              | move the cursor in the input line                      |
+| Home / End         | start / end of the input line (also Ctrl-A / Ctrl-E)   |
+| Backspace / Delete | delete the character before / under the cursor         |
+| Esc                | clear input line / quit                                |
 
-Selecting an incoming invite prompts you to accept (`y`) or decline (`n`);
-selecting a name under USERS prompts to send them a chat invite.
+Pressing Enter on an incoming invite prompts you to accept (`y`) or decline
+(`n`); on a name under USERS it prompts to send them a chat invite.
+
+The left pane scrolls when it has more rows than the terminal; ▲ and ▼ on its
+border show that rows are hidden above or below. The bottom two rows are a
+status line and a key bar (`1Help 2Invite 3Group 4GInvite 9Menu 10Quit`).
+
+Typing takes any character — accents, CJK, emoji — exactly as typed, and
+widths are counted in terminal columns, so a line of double-width characters
+wider than the pane scrolls sideways with the cursor kept on screen. (Emoji
+widths differ between terminals, so on some the cursor can sit a column off
+after an emoji; the text sent is unaffected.)
+
+### Mouse
+
+| Mouse        | Action                                                          |
+|--------------|-----------------------------------------------------------------|
+| click        | open a chat or group; on an invite or a name under USERS, select it |
+| double-click | open or act on any item: answer an invite, invite a user to chat |
+| right-click  | a menu of the item's actions (below)                            |
+| wheel        | scroll what is under the pointer: the conversation, or the left pane (3 lines a notch) |
+| key bar      | click a key on the bottom row to press it                       |
+
+A single click on an invite or a name under USERS only selects it, so a
+stray click cannot pop up a question; double-click it, or press Enter.
+Scrolling the conversation back to the bottom marks it read, as PgDn does.
+
+The menu (right-click, `F9` or `/menu`) offers, for
+
+* a chat: Open, Unfriend, Invite to a group;
+* a group: Open, Invite a user, Remove a member, Leave;
+* an invite: Accept, Decline;
+* a name under USERS: Send a chat invite.
+
+Each item does exactly what its key or slash command does. Esc, or a click
+outside the menu, closes it without doing anything.
 
 Every action is also available as a **slash command** typed into the input
 line — these work in any terminal, including ones whose host application
@@ -140,6 +187,9 @@ Ctrl-N/Ctrl-G/Ctrl-O itself):
 /group NAME      create a group
 /ginvite USER    invite a user to the open (or selected) group
 /gremove USER    remove a user from the open (or selected) group
+/leave           leave the open (or selected) group
+/menu            the selected item's menu, as F9
+/help            help, as F1
 /quit            exit
 ```
 

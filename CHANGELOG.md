@@ -11,6 +11,65 @@ stops working the way it did. `CLAUDE.md` has the rest.
 Sections 0.1.0 to 0.1.3 were written afterwards, from the git history, and
 are dated by their uploads to PyPI. Numbers in brackets are pull requests.
 
+## 0.2.0 — 2026-11-16
+
+The TUI's keyboard and mouse now work the way Meridian Commander's do
+(PAF-001). Nothing in the shared directory changed: 0.1.x clients and this
+one chat with each other in the same directory.
+
+0.1.4 was not published to PyPI on its own: PyPI goes from 0.1.3 to 0.2.0,
+so this release also carries 0.1.4's changes, below.
+
+### Fixed
+
+- **Typed text in any language arrives as typed.** Keys were read one byte
+  at a time, so "é" became "Ã©", and that corrupted text was what got
+  encrypted and sent. Keys are now read with `get_wch()`, whole, in the
+  input line and in every prompt (F2, F3, F4 and the yes/no questions).
+- **Keys that are not text no longer type characters.** Left, Home, Delete,
+  F1, F5 and the like each used to leave a stray character (`Ą`, `Ć`, …) in
+  the input line or a prompt.
+- **The left pane scrolls.** With more chats, groups and users than the
+  terminal has rows, the rest could not be seen or clicked, and the
+  selection walked off the screen.
+- **A slow click cannot answer a question.** The release of a click that
+  opened a prompt was typed into it, so the answer was neither yes nor no.
+  Mouse events now never type into a prompt.
+
+### Added
+
+- **An editable input line:** ← and → move the cursor, Home and End (and
+  Ctrl-A and Ctrl-E) jump to its ends, Backspace and Delete remove the
+  character before or under the cursor, and a line wider than the pane
+  scrolls sideways. Widths are counted in terminal columns, so CJK and emoji
+  take two.
+- **The mouse wheel** scrolls whatever is under the pointer, three lines a
+  notch: the conversation (back at the bottom, it is marked read) or the left
+  pane.
+- **Double-click** opens or acts on any item. A single click still opens a
+  chat or group; on an invite or a name under USERS it only selects, so a
+  stray click cannot pop up a question.
+- **A right-click menu** of what you can do with an item: Open, Unfriend and
+  Invite to a group on a chat; Open, Invite a user, Remove a member and Leave
+  on a group; Accept and Decline on an invite; Send a chat invite on a name
+  under USERS. **F9** and **`/menu`** open it on the selected item.
+- **A key bar** along the bottom, `1Help 2Invite 3Group 4GInvite 9Menu
+  10Quit`, whose keys can be clicked. Status messages moved to a line just
+  above it, so the conversation is one row shorter.
+- **F1 and `/help`** open a help screen with the keys, the mouse and the
+  slash commands.
+- **`/leave`** leaves the open (or selected) group, as the menu's Leave does.
+
+### Changed
+
+- Esc acts at once: curses waited a second after it for the rest of an
+  escape sequence, and now waits 25 ms, as Meridian does. An `ESCDELAY` set
+  in the environment is left alone.
+- The welcome screen describes the mouse and points at F1.
+- The README, the Read the Docs usage page and the GitHub Pages site describe
+  the new keys and the mouse, and the site's four TUI captures were taken
+  again from this version.
+
 ## 0.1.4 — 2026-11-16
 
 The first numbered section since 0.1.3. It also covers four changes that
