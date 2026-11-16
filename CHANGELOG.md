@@ -45,6 +45,9 @@ reached `main` after 0.1.3 was published, without moving the number, so
 - The README's licence section has no relative links, which were dead on
   PyPI and in Sphinx builds (#15).
 - CI keeps its build artifacts for 7 days instead of 90 (#15).
+- CI tests Python 3.9 on Ubuntu 24.04: `ubuntu-latest` is now Ubuntu 26.04,
+  which has no Python 3.9 for `setup-python`. 3.11 and 3.13 stay on
+  `ubuntu-latest`, and 3.9 is still the floor.
 
 ## 0.1.3 — 2026-08-12
 
