@@ -180,7 +180,10 @@ coverage run -m unittest discover -s tests && coverage report
 ## Releasing to PyPI
 
 The version is single-sourced from `__version__` in
-`phone_a_friend/__init__.py` — bump it there (and only there), then publish.
+`phone_a_friend/__init__.py`. Every change moves it: each pull request bumps
+it there (and only there) and opens `CHANGELOG.md` with that version's own
+dated section, and CI's `version` job (`tests/check_version.sh`) fails a pull
+request that does not. Publishing is a separate step, taken when wanted.
 
 Publishing is automated via `.github/workflows/publish.yml` using PyPI
 [trusted publishing](https://docs.pypi.org/trusted-publishers/) — no API
