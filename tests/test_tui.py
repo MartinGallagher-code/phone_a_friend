@@ -13,7 +13,9 @@ import contextlib
 import curses
 import io
 import os
+import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -696,14 +698,13 @@ class TuiTest(TuiCase):
 
 # ======================================================================
 # PAF-001: typing any character, editing the input line, a scrolling
-# sidebar, the mouse wheel, clicks, right-click menus, help and the key bar.
+# sidebar, the mouse wheel, clicks, right-click menus and help. PAF-002:
+# the key bar is gone, and the key reference is on screen.
 #
 # Screen geometry the tests rely on (80 columns: the sidebar is 22 wide,
 # the conversation text starts at column 24, typed text at column 26):
-#   24 rows: sidebar rows 0-21, input line 21, status 22, key bar 23
-#   12 rows: sidebar rows 0-9,  input line 9,  status 10, key bar 11
-# The key bar's six keys are 13 columns each: Help 0-12, Invite 13-25,
-# Group 26-38, GInvite 39-51, Menu 52-64, Quit 65-77.
+#   24 rows: sidebar rows 0-22, conversation 2-20, input line 22, status 23
+#   12 rows: sidebar rows 0-10, conversation 2-8,  input line 10, status 11
 # ======================================================================
 
 
@@ -841,11 +842,11 @@ class UnicodeAndKeysTest(TuiCase):
             for ch in "x" * 30:
                 app._handle_key(scr, ch)
             app._draw(scr)
-            self.assertEqual(app._cursor_at, (21, x0 + 12))
+            self.assertEqual(app._cursor_at, (22, x0 + 12))
             self.assertGreater(app.hscroll, 0)
             app._handle_key(scr, curses.KEY_HOME)
             app._draw(scr)
-            self.assertEqual((app.hscroll, app._cursor_at), (0, (21, x0)))
+            self.assertEqual((app.hscroll, app._cursor_at), (0, (22, x0)))
             # double-width characters: the cursor still stays in the pane
             app._handle_key(scr, ESC)
             for ch in "日" * 20:
@@ -928,8 +929,9 @@ class SidebarScrollTest(TuiCase):
             a, [curses.KEY_UP, MOUSE, -1], scr=scr,
             mouse_events=[ev(3, 4, B1_CLICK)],
         )
-        self.assertEqual(app.top, 23)
-        self.assertEqual(app.items[app.sel], ("usr", "user24"))
+        # 33 rows, 11 on screen: the last screenful starts at row 22
+        self.assertEqual(app.top, 22)
+        self.assertEqual(app.items[app.sel], ("usr", "user23"))
         self.assertEqual(a.config["pending"], [])  # a click only selects
 
     def test_wheel_scrolls_the_sidebar(self):
@@ -960,7 +962,7 @@ class SidebarScrollTest(TuiCase):
         scr.keys = [curses.KEY_UP, -1, MOUSE, note]
         with fake_curses(mouse_events=[ev(3, 2, WHEEL_UP)]):
             app._main(scr)
-        self.assertEqual(states, [(20, 29)])
+        self.assertEqual(states, [(19, 29)])
 
 
 class WheelTest(TuiCase):
@@ -985,7 +987,7 @@ class WheelTest(TuiCase):
         events = [
             ev(40, 5, WHEEL_UP),
             ev(40, 5, WHEEL_UP),
-            ev(40, 21, WHEEL_DOWN),  # over the input line, too
+            ev(40, 22, WHEEL_DOWN),  # over the input line, too
             ev(40, 5, WHEEL_DOWN),
         ]
         with fake_curses(mouse_events=events):
@@ -994,7 +996,7 @@ class WheelTest(TuiCase):
 
     def test_wheel_elsewhere_does_nothing(self):
         a, b = self.make_pair()
-        events = [ev(5, 22, WHEEL_UP), ev(5, 23, WHEEL_UP)]
+        events = [ev(5, 23, WHEEL_UP), ev(40, 23, WHEEL_UP)]  # status line
         app, _ = self.run_app(b, [ENTER, MOUSE, MOUSE, -1],
                               mouse_events=events)
         self.assertEqual(app.scroll, 0)
@@ -1069,7 +1071,8 @@ class ClickTest(TuiCase):
             ev(3, 15, B1_CLICK),   # below the last row
             ev(40, 5, B1_CLICK),   # the conversation
             ev(40, 5, B3_CLICK),
-            ev(5, 22, B1_CLICK),   # the status line
+            ev(5, 23, B1_CLICK),   # the status line
+            ev(40, 23, B1_CLICK),
             ev(3, 1, 0),           # no button
         ]
         app, _ = self.run_app(b, [MOUSE] * len(events) + [-1],
@@ -1094,10 +1097,10 @@ class ClickTest(TuiCase):
         scr.keys = (list("abcdef") + [MOUSE, note, MOUSE, note, MOUSE, note]
                     + [ESC] + list("日本語") + [MOUSE, note])
         events = [
-            ev(26 + 3, 21, B1_CLICK),
-            ev(26 + 3, 21, 0),          # no button: nothing
-            ev(26 + 40, 21, B1_PRESS),  # past the end
-            ev(26 + 3, 21, B1_RELEASE),  # inside the second, wide, character
+            ev(26 + 3, 22, B1_CLICK),
+            ev(26 + 3, 22, 0),          # no button: nothing
+            ev(26 + 40, 22, B1_PRESS),  # past the end
+            ev(26 + 3, 22, B1_RELEASE),  # inside the second, wide, character
         ]
         with fake_curses(mouse_events=events):
             app._main(scr)
@@ -1275,7 +1278,7 @@ class MenuTest(TuiCase):
         self.assertEqual(app.active, ("dm", "alice"))
 
 
-class HelpAndKeyBarTest(TuiCase):
+class HelpAndKeyReferenceTest(TuiCase):
     LAST_HELP_LINE = "Esc, Enter or a click closes this."
 
     def test_help_opens_and_closes(self):
@@ -1320,55 +1323,183 @@ class HelpAndKeyBarTest(TuiCase):
 
         self.run_app(a, [fail, ESC, -1], scr=scr)
 
-    def test_key_bar_clicks_do_what_the_keys_do(self):
+    def test_clicks_on_the_bottom_row_do_nothing(self):
+        # The bottom row was the key bar (PAF-001); it is the status line now
+        # (PAF-002), and no column of it runs an action.
         a, b = self.make_pair()
-        bar = 23
-        events = [
-            ev(3, bar, B1_CLICK),    # 1 Help
-            ev(15, bar, B1_CLICK),   # 2 Invite
-            ev(28, bar, B1_CLICK),   # 3 Group
-            ev(41, bar, B1_CLICK),   # 4 GInvite: no group open
-            ev(54, bar, B1_CLICK),   # 9 Menu, for alice
-            ev(78, bar, B1_CLICK),   # past the last key: nothing
-            ev(3, bar, B1_PRESS),    # a press alone: nothing
-            ev(67, bar, B1_CLICK),   # 10 Quit, declined
-            ev(67, bar, B1_CLICK),   # 10 Quit
-        ]
-        keys = [MOUSE, ESC, MOUSE, ESC, MOUSE, ESC, MOUSE, MOUSE, ESC, MOUSE,
-                MOUSE, MOUSE, "n", ENTER, MOUSE, "y", ENTER, "X"]
-        scr = FakeScreen(keys)
-        app = tui.App(b)
-        with mock.patch.object(tui.App, "_do", autospec=True,
-                               side_effect=tui.App._do) as do, \
-                fake_curses(mouse_events=events):
-            app._main(scr)
-        actions = [c.args[2] for c in do.call_args_list]
-        self.assertEqual(
-            actions, ["help", "invite", "group", "ginvite", "menu", "quit",
-                      "quit"],
-        )
-        self.assertEqual(scr.keys, ["X"])  # the second Quit ended the loop
-        self.assertIn("open a group first", "\n".join(scr.drawn))
-        drawn = [d.strip() for d in scr.drawn]
-        for label in ("1", "Help", "Invite", "GInvite", "9", "Menu", "10",
-                      "Quit"):
-            self.assertIn(label, drawn)
+        for rows in (24, 12):
+            with self.subTest(rows=rows):
+                events = [ev(x, rows - 1, B1_CLICK) for x in range(80)]
+                events += [ev(x, rows - 1, B1_DOUBLE) for x in (3, 40, 78)]
+                scr = FakeScreen([MOUSE] * len(events) + [-1], rows=rows)
+                app = tui.App(b)
+                with mock.patch.object(tui.App, "_do", autospec=True) as do, \
+                        mock.patch.object(tui.App, "_open_selected",
+                                          autospec=True) as opened, \
+                        fake_curses(mouse_events=events):
+                    app._main(scr)
+                self.assertEqual(do.call_count, 0)
+                self.assertEqual(opened.call_count, 0)
+                self.assertIsNone(app.active)
+                self.assertEqual((app.input, app.cursor), ("", 0))
 
-    def test_status_line_sits_above_the_key_bar(self):
+    def test_the_status_line_is_the_last_row(self):
         a = Session.register(self.shared, "alice", "pw")
-        app = tui.App(a)
-        rows = []
+        for rows in (24, 12):
+            with self.subTest(rows=rows):
+                drawn = []
+
+                class Screen(FakeScreen):
+                    def addnstr(self, y, x, s, n, *attr):
+                        drawn.append((y, x, s))
+                        super().addnstr(y, x, s, n, *attr)
+
+                with fake_curses():
+                    tui.App(a)._main(Screen([-1], rows=rows))
+                # drawn once per frame, always on the last row
+                status = [(y, x, s) for y, x, s in drawn
+                          if "logged in as alice" in s]
+                self.assertEqual({(y, x) for y, x, _ in status},
+                                 {(rows - 1, 0)})
+                line = status[0][2]
+                self.assertEqual(tui.cells(line), 79)
+                self.assertTrue(line.endswith(" /help: keys "), line)
+                self.assertFalse(any(y >= rows for y, _, _ in drawn))
+
+    def test_a_prompt_is_on_the_bottom_row(self):
+        a = Session.register(self.shared, "alice", "pw")
+        drawn = []
 
         class Screen(FakeScreen):
             def addnstr(self, y, x, s, n, *attr):
-                rows.append((y, s))
+                drawn.append((y, s))
                 super().addnstr(y, x, s, n, *attr)
 
         with fake_curses():
-            app._main(Screen([-1]))
-        status = {y for y, s in rows if "logged in as alice" in s}
-        bar = {y for y, s in rows if s.startswith("Help")}
-        self.assertEqual((status, bar), ({22}, {23}))
+            tui.App(a)._main(Screen([CTRL_G, ESC, -1]))
+        self.assertEqual({y for y, s in drawn if "new group name:" in s}, {23})
+
+    def test_nothing_on_screen_names_a_function_key(self):
+        fkey = re.compile(r"\bF[0-9]+\b")
+        for name in ("HELP", "HELP_HINT", "KEY_REFERENCE", "HELP_LINES",
+                     "WELCOME"):
+            text = getattr(tui, name)
+            text = text if isinstance(text, str) else "\n".join(text)
+            with self.subTest(constant=name):
+                self.assertIsNone(fkey.search(text), text)
+        a, b = self.make_pair()
+        b.create_group("g")
+        screens = {
+            "start-up": [-1],
+            "a conversation": [ENTER, -1],
+            "the help box": [ENTER] + list("/help") + [ENTER, ESC, -1],
+            "the menu": [ENTER, curses.KEY_F9, ESC, -1],
+            "a missing group": [CTRL_O, -1],
+            "a new group": list("/group h") + [ENTER, -1],
+        }
+        for name, keys in screens.items():
+            with self.subTest(screen=name):
+                _, scr = self.run_app(b, keys)
+                self.assertIsNone(fkey.search(scr.rendered()), scr.rendered())
+        app = tui.App(b)
+        with fake_curses():
+            app._action_group_for(FakeScreen([ESC]), "alice")  # a menu
+        b.config["groups"].clear()
+        with fake_curses():
+            app._action_group_for(FakeScreen([]), "alice")
+        self.assertIsNone(fkey.search(app.status), app.status)
+
+    def test_the_key_reference_matches_the_code(self):
+        ref = "\n".join(tui.KEY_REFERENCE)
+        # every command /help's usage line names, and nothing else
+        usage = {w for w in tui.App.USAGE.split() if w.startswith("/")}
+        listed = {ln.split()[0] for ln in tui.KEY_REFERENCE
+                  if ln.startswith("  /")}
+        self.assertEqual(listed, usage)
+        # the Ctrl keys it names are bound to what it says they do
+        for code, name, action in ((CTRL_N, "Ctrl-N", "invite"),
+                                   (CTRL_G, "Ctrl-G", "group"),
+                                   (CTRL_O, "Ctrl-O", "ginvite")):
+            self.assertIn(name, ref)
+            self.assertEqual(tui.KEY_ACTIONS[code], action)
+        # the reference is /help's text and the welcome pane's
+        self.assertEqual(tui.HELP_LINES[:len(tui.KEY_REFERENCE)],
+                         tui.KEY_REFERENCE)
+        self.assertEqual(tui.WELCOME[-len(tui.KEY_REFERENCE):],
+                         tui.KEY_REFERENCE)
+        # and it fits the welcome pane of an 80-column screen, with a
+        # column to spare for the scroll marks
+        for line in tui.WELCOME:
+            self.assertLessEqual(tui.cells(line), 54, line)
+
+    def test_the_welcome_pane_is_the_reference_and_scrolls(self):
+        a = Session.register(self.shared, "alice", "pw")
+        app = tui.App(a)
+        scr = FakeScreen([], rows=12, cols=80)  # 7 rows of it at a time
+        last = tui.WELCOME[-1]
+        seen = []
+
+        def look():
+            # the last frame drawn: each ends with the status line
+            ends = [i for i, d in enumerate(scr.drawn) if "/help: keys" in d]
+            frame = scr.drawn[ends[-2] + 1:] if len(ends) > 1 else scr.drawn
+            seen.append((app.welcome_top, list(frame)))
+            scr.drawn.clear()
+            return -1
+
+        scr.keys = ([look] + [curses.KEY_NPAGE] * 9 + [look]
+                    + [curses.KEY_PPAGE, look]
+                    + [MOUSE, look, MOUSE, look, MOUSE, look])
+        events = [ev(40, 5, WHEEL_UP), ev(40, 10, WHEEL_DOWN),  # the input line
+                  ev(5, 5, WHEEL_DOWN)]                         # the sidebar
+        with fake_curses(mouse_events=events):
+            app._main(scr)
+        tops = [top for top, _ in seen]
+        end = len(tui.WELCOME) - 7
+        self.assertEqual(tops, [0, end, end - 5, end - 8, end - 5, end - 5])
+        first, at_end = seen[0][1], seen[1][1]
+        self.assertIn(tui.WELCOME[0], first)
+        self.assertIn("▼", first)
+        self.assertNotIn("▲", first)
+        self.assertNotIn(last, first)
+        self.assertIn(last, at_end)
+        self.assertIn("▲", at_end)
+        self.assertNotIn("▼", at_end)
+        # opening a conversation shows the conversation, not the reference
+        b = Session.register(self.shared, "bob", "pw")
+        a.invite_contact("bob")
+        fname, payload = b.list_invites()[0]
+        b.accept_invite(fname, payload)
+        a.process_replies()
+        _, scr = self.run_app(a, [ENTER, -1])
+        ends = [i for i, d in enumerate(scr.drawn) if "/help: keys" in d]
+        frame = scr.drawn[ends[-2] + 1:]
+        self.assertIn("chat with bob", frame)
+        self.assertNotIn(tui.WELCOME[0], frame)
+
+    def test_the_smallest_screen(self):
+        a = Session.register(self.shared, "alice", "pw")
+        rows, cols = tui.MIN_ROWS, tui.MIN_COLS
+        app, scr = self.run_app(a, list("hi") + [-1],
+                                scr=FakeScreen([], rows=rows, cols=cols))
+        self.assertNotIn("terminal too small", scr.rendered())
+        self.assertEqual(app._cursor_at[0], rows - 2)  # the input line
+        self.assertIn("  hi", scr.drawn)
+        self.assertIn(tui.WELCOME[0][:cols - 25], scr.rendered())
+        _, scr = self.run_app(a, [-1],
+                              scr=FakeScreen([], rows=rows - 1, cols=cols))
+        self.assertIn("terminal too small", scr.rendered())
+
+    def test_no_other_program_is_started(self):
+        # F1 opening a web page was the terminal's doing, never paf's; and
+        # paf has no way to start one.
+        code = ("import sys, phone_a_friend.tui, phone_a_friend.__main__; "
+                "print(sorted({'webbrowser', 'subprocess'} & set(sys.modules)))")
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True,
+            cwd=os.path.join(os.path.dirname(__file__), ".."), check=True,
+        ).stdout.strip()
+        self.assertEqual(out, "[]")
 
 
 class LeaveCommandTest(TuiCase):

@@ -7,8 +7,10 @@ Left pane: invites, chats (contacts), groups, and registered users you have
 not connected with yet, with unread indicators. It scrolls when it has more
 rows than the terminal, and ▲ or ▼ on its border shows that rows are hidden
 above or below.
-Right pane: the active conversation plus an input line.
-Bottom rows: a status line, and a key bar whose keys can be clicked.
+Right pane: the active conversation plus an input line. With no
+conversation open, it shows the key reference instead, which scrolls.
+Bottom row: the status line, which always ends with where to find the keys
+("/help: keys").
 
 Keys::
 
@@ -16,13 +18,10 @@ Keys::
     Enter            open the selected item (or send, if the input line has
                      text); on an invite: prompts to accept/decline; on a
                      user under USERS: prompts to send them a chat invite
-    F1               help: the keys, the mouse and the commands
-    F2 or Ctrl-N     invite a user to chat (pushes your public key to them)
-    F3 or Ctrl-G     create a new group
-    F4 or Ctrl-O     invite a user to the active group (pushes the group key)
-    F9               a menu of the selected item's actions
-    F10              quit
-    PgUp/PgDn        scroll message history
+    Ctrl-N           invite a user to chat (pushes your public key to them)
+    Ctrl-G           create a new group
+    Ctrl-O           invite a user to the active group (pushes the group key)
+    PgUp/PgDn        scroll message history, or the key reference
     Left/Right       move the cursor in the input line
     Home/End         jump to the start / end of the input line (also
                      Ctrl-A / Ctrl-E)
@@ -38,7 +37,6 @@ Mouse::
     right-click      a menu of the item's actions
     wheel            scroll whatever is under the pointer: the
                      conversation, or the left pane
-    key bar          click a key on the bottom row to press it
 
 Slash commands typed into the input line work in any terminal - including
 ones whose host application intercepts Ctrl or function keys, such as the
@@ -50,9 +48,15 @@ VS Code integrated terminal (VS Code binds Ctrl-N/Ctrl-G/Ctrl-O itself)::
     /ginvite USER    invite a user to the open (or selected) group
     /gremove USER    remove a user from the open (or selected) group
     /leave           leave the open (or selected) group
-    /menu            the selected item's menu, as F9
-    /help            help, as F1
+    /menu            the selected item's menu
+    /help            the key reference, over an open conversation
     /quit            exit
+
+F1 to F4, F9 and F10 still do what they did in 0.2.0 (help, invite, group,
+group invite, menu, quit) where the terminal passes them on, but nothing on
+screen names them: many terminals keep F1 or F10 for themselves (F1 opens
+GNOME Terminal's manual, a web page), so the screen points to /help, which
+every terminal passes on (PAF-002).
 
 Typing takes any character, accents, CJK and emoji included: keys are read
 with ``get_wch()``, so a character arrives whole rather than one UTF-8 byte
@@ -91,28 +95,24 @@ ESCDELAY_MS = 25
 CLICK_MS = 200
 #: Lines a notch of the mouse wheel scrolls. (Meridian's.)
 WHEEL_LINES = 3
-MIN_ROWS, MIN_COLS = 7, 40
+#: A title row and its rule, at least one row of conversation, the rule
+#: above the input line, the input line, and the status line.
+MIN_ROWS, MIN_COLS = 6, 40
 
-HELP = "Enter open/send  F1 help  F9 or right-click: menu"
+HELP = "Enter open/send  right-click or /menu: menu"
+#: The end of the status line, always: where the key reference is.
+HELP_HINT = "/help: keys"
 QUIT_PROMPT = "Quit phone_a_friend? [y/N] "
-
-#: The key bar on the bottom row: (key, label, action). Clicking a label
-#: does what pressing its key does.
-KEYBAR = (
-    ("1", "Help", "help"),
-    ("2", "Invite", "invite"),
-    ("3", "Group", "group"),
-    ("4", "GInvite", "ginvite"),
-    ("9", "Menu", "menu"),
-    ("10", "Quit", "quit"),
-)
 
 ENTER_KEYS = (10, 13, curses.KEY_ENTER)
 BACKSPACE_KEYS = (curses.KEY_BACKSPACE, 127, 8)
 ESC = 27
 CTRL_A, CTRL_E = 1, 5
 
-#: Keys that run the same actions as the key bar.
+#: Keys bound to actions. The function keys still work where the terminal
+#: passes them on, but nothing on screen names them (PAF-002): the key
+#: reference gives the Ctrl keys and the slash commands, which reach paf in
+#: any terminal.
 KEY_ACTIONS = {
     curses.KEY_F1: "help",
     curses.KEY_F2: "invite",
@@ -125,61 +125,59 @@ KEY_ACTIONS = {
     curses.KEY_F10: "quit",
 }
 
-HELP_LINES = [
+#: The keys, the mouse and the commands: the welcome pane while no
+#: conversation is open, and /help over one. Lines fit the welcome pane of
+#: an 80-column terminal (55 columns).
+KEY_REFERENCE = [
     "Keys",
-    "  Up/Down          select in the left pane",
-    "  Enter            open the selection, or send the input line",
-    "  F1 or /help      this help",
-    "  F2 or Ctrl-N     invite a user to chat",
-    "  F3 or Ctrl-G     create a group",
-    "  F4 or Ctrl-O     invite a user to the open group",
-    "  F9 or /menu      a menu of the selected item's actions",
-    "  F10              quit",
-    "  PgUp/PgDn        scroll the conversation",
-    "  Left/Right       move the cursor in the input line",
-    "  Home/End         start / end of the line (Ctrl-A / Ctrl-E)",
-    "  Backspace/Del    delete before / under the cursor",
-    "  Esc              clear the input line, or quit",
+    "  Up/Down        select in the left pane",
+    "  Enter          open the selection, or send",
+    "  Ctrl-N         invite a user to chat",
+    "  Ctrl-G         create a group",
+    "  Ctrl-O         invite a user to the open group",
+    "  PgUp/PgDn      scroll the conversation, or this page",
+    "  Left/Right     move the cursor in the input line",
+    "  Home/End       start / end of the line",
+    "                 (also Ctrl-A / Ctrl-E)",
+    "  Backspace/Del  delete before / under the cursor",
+    "  Esc            clear the input line, or quit",
     "",
     "Mouse",
-    "  click            open a chat or group; select an invite or user",
-    "  double-click     open or act on any item",
-    "  right-click      a menu of the item's actions",
-    "  wheel            scroll what is under the pointer",
-    "  bottom row       click a key to press it",
+    "  click          open a chat or group;",
+    "                 select an invite or a user",
+    "  double-click   open or act on any item",
+    "  right-click    a menu of the item's actions",
+    "  wheel          scroll what is under the pointer",
     "",
     "Commands, typed into the input line",
-    "  /invite USER     invite a user to chat",
-    "  /unfriend USER   stop chatting with a user",
-    "  /group NAME      create a group",
-    "  /ginvite USER    invite a user to the open group",
-    "  /gremove USER    remove a user from the open group",
-    "  /leave           leave the open group",
-    "  /menu  /help  /quit",
+    "  /invite USER   invite a user to chat",
+    "  /unfriend USER stop chatting with a user",
+    "  /group NAME    create a group",
+    "  /ginvite USER  invite a user to the open group",
+    "  /gremove USER  remove a user from the open group",
+    "  /leave         leave the open group",
+    "  /menu          the selected item's menu",
+    "  /help          this list, over a conversation",
+    "  /quit          quit",
     "",
-    "Esc, Enter or a click closes this.",
+    "Commands work in any terminal, even one that",
+    "keeps Ctrl or function keys for itself.",
 ]
+
+HELP_LINES = KEY_REFERENCE + ["", "Esc, Enter or a click closes this."]
 
 WELCOME = [
     "Welcome! Select a chat or group on the left.",
     "",
     "Click a chat or group to open it. Double-click",
     "an invite to answer it, or a name under USERS",
-    "to invite them to chat. Right-click (or F9)",
+    "to invite them to chat. Right-click (or /menu)",
     "for a menu of what you can do with an item.",
-    "",
-    "F1 or /help    keys, mouse and commands",
-    "F2 or Ctrl-N   invite someone to chat by name",
-    "F3 or Ctrl-G   create a group",
-    "F4 or Ctrl-O   invite someone to the open group",
-    "",
-    "Commands typed into the input line, such as",
-    "/invite USER or /group NAME, work even in",
-    "terminals that swallow Ctrl or function keys.",
     "",
     "Invites push public keys: without an accepted",
     "invite, messages cannot be decrypted.",
-]
+    "",
+] + KEY_REFERENCE
 
 CP_HEADER = 1
 CP_SELECT = 2
@@ -187,7 +185,6 @@ CP_UNREAD = 3
 CP_STATUS = 4
 CP_SENDER = 5
 CP_DIM = 6
-CP_KEYBAR = 7
 
 
 # ------------------------------------------------------------- text widths
@@ -289,6 +286,7 @@ class App:
         self.hscroll = 0  # first character of self.input on screen
         self.status = f"logged in as {session.name} - {HELP}"
         self.scroll = 0  # lines scrolled up from the bottom
+        self.welcome_top = 0  # first line of the key reference on screen
         self.invites: List[Tuple[str, dict]] = []
         self.msg_cache: Dict[str, Dict[str, dict]] = {}  # conv -> fname -> msg
         self.unread: Dict[str, int] = {}
@@ -322,7 +320,6 @@ class App:
             curses.init_pair(CP_STATUS, curses.COLOR_BLACK, curses.COLOR_WHITE)
             curses.init_pair(CP_SENDER, curses.COLOR_GREEN, -1)
             curses.init_pair(CP_DIM, curses.COLOR_BLUE, -1)
-            curses.init_pair(CP_KEYBAR, curses.COLOR_BLACK, curses.COLOR_CYAN)
 
         while True:
             self._poll()
@@ -459,7 +456,7 @@ class App:
             return
         leftw = max(22, min(32, cols // 4))
         self._layout = (rows, cols, leftw)
-        side_rows = rows - 2  # above the status line and the key bar
+        side_rows = rows - 1  # above the status line
         self._draw_sidebar(scr, side_rows, leftw)
         try:
             for y in range(side_rows):
@@ -473,7 +470,6 @@ class App:
             _put(scr, side_rows - 1, leftw, "▼")
         self._draw_conversation(scr, rows, cols, leftw)
         self._draw_status(scr, rows, cols)
-        self._draw_keybar(scr, rows, cols)
         self._place_cursor(scr)
         scr.refresh()
 
@@ -552,12 +548,22 @@ class App:
         except curses.error:
             pass
 
-        body_top, body_bottom = 2, rows - 5  # inclusive rows for messages
-        input_row = rows - 3
+        body_top, body_bottom = 2, rows - 4  # inclusive rows for messages
+        input_row = rows - 2
+        height = body_bottom - body_top + 1
 
         lines: List[Tuple[str, int]] = []
         if self.active is None:
-            lines = [(ln, 0) for ln in WELCOME]
+            # The key reference, read from the top; PgUp/PgDn and the wheel
+            # scroll it, and ▲ / ▼ show that lines are hidden (PAF-002).
+            self.welcome_top = max(0, min(self.welcome_top, len(WELCOME) - height))
+            shown = WELCOME[self.welcome_top:self.welcome_top + height]
+            for y, text in enumerate(shown, body_top):
+                _put(scr, y, x0, clip(text, width))
+            if self.welcome_top > 0:
+                _put(scr, body_top, cols - 2, "▲")
+            if self.welcome_top + height < len(WELCOME):
+                _put(scr, body_bottom, cols - 2, "▼")
         else:
             conv = self.s.conv_key(*self.active)
             msgs = sorted(
@@ -577,7 +583,6 @@ class App:
                 for cont in wrapped[1:]:
                     lines.append((" " * cells(prefix) + cont, attr))
 
-        height = body_bottom - body_top + 1
         max_scroll = max(0, len(lines) - height)
         self.scroll = min(self.scroll, max_scroll)
         end = len(lines) - self.scroll
@@ -620,30 +625,12 @@ class App:
         return len(self.input)
 
     def _draw_status(self, scr, rows: int, cols: int) -> None:
-        _put(
-            scr, rows - 2, 0, pad(f" {self.status} ", cols - 1),
-            curses.color_pair(CP_STATUS),
-        )
-
-    @staticmethod
-    def _keybar_layout(cols: int) -> List[Tuple[int, int, str, str, str]]:
-        """(x, width, key, label, action) for each key on the key bar, the
-        same for drawing it and for finding the key under a click."""
-        seg = max(1, (cols - 1) // len(KEYBAR))
-        return [
-            (i * seg, seg, num, label, action)
-            for i, (num, label, action) in enumerate(KEYBAR)
-        ]
-
-    def _draw_keybar(self, scr, rows: int, cols: int) -> None:
-        y = rows - 1
-        _put(scr, y, 0, " " * (cols - 1), curses.color_pair(CP_KEYBAR))
-        for x, seg, num, label, _ in self._keybar_layout(cols):
-            _put(scr, y, x, num, curses.A_BOLD)
-            _put(
-                scr, y, x + len(num), pad(label, seg - len(num)),
-                curses.color_pair(CP_KEYBAR),
-            )
+        """The bottom row: the latest status, and at its right end, always,
+        where the key reference is."""
+        width = cols - 1
+        hint = f" {HELP_HINT} "
+        text = pad(f" {self.status} ", width - cells(hint)) + hint
+        _put(scr, rows - 1, 0, text, curses.color_pair(CP_STATUS))
 
     def _place_cursor(self, scr) -> None:
         try:
@@ -709,7 +696,7 @@ class App:
         self.cursor = 0
 
     def _do(self, scr, action: str) -> bool:
-        """Run a key-bar action, from its key or a click; False means quit."""
+        """Run a key's action (KEY_ACTIONS); False means quit."""
         if action == "help":
             self._help(scr)
         elif action == "invite":
@@ -726,9 +713,13 @@ class App:
 
     def _scroll_history(self, lines: int) -> None:
         """Scroll the conversation ``lines`` up (negative: down). Back at
-        the bottom, it has been read."""
+        the bottom, it has been read. With no conversation open, the key
+        reference in its place scrolls instead."""
+        if self.active is None:
+            self.welcome_top = max(0, self.welcome_top - lines)
+            return
         self.scroll = max(0, self.scroll + lines)
-        if self.scroll == 0 and self.active:
+        if self.scroll == 0:
             self.s.mark_read(*self.active)
 
     def _scroll_sidebar(self, lines: int) -> None:
@@ -745,20 +736,18 @@ class App:
 
     def _region(self, y: int, x: int) -> Optional[str]:
         """The part of the screen at (y, x): "sidebar", "conversation",
-        "input", "status" or "keybar"; None when nothing is drawn."""
+        "input" or "status"; None when nothing is drawn."""
         if self._layout is None:
             return None
         rows, _, leftw = self._layout
         if y == rows - 1:
-            return "keybar"
-        if y == rows - 2:
             return "status"
         if x <= leftw:
             return "sidebar"
-        return "input" if y == rows - 3 else "conversation"
+        return "input" if y == rows - 2 else "conversation"
 
     def _handle_mouse(self, scr) -> bool:
-        """Act on a mouse event; False means quit (from the key bar)."""
+        """Act on a mouse event. A click on the status line does nothing."""
         try:
             _, x, y, _, bstate = curses.getmouse()
         except curses.error:
@@ -774,12 +763,6 @@ class App:
                 self._scroll_history(-notch)
             return True
         clicked = bstate & _clicked()
-        if where == "keybar":
-            if clicked:
-                for kx, seg, _, _, action in self._keybar_layout(self._layout[1]):
-                    if kx <= x < kx + seg:
-                        return self._do(scr, action)
-            return True
         if where == "input":
             if clicked or bstate & curses.BUTTON1_PRESSED:
                 self.cursor = self._input_index_at(x - self._layout[2] - 4)
@@ -918,7 +901,7 @@ class App:
             gid = self.s.create_group(name)
             self._open_conv("grp", gid)
             self.status = (
-                f"group '{name.strip()}' created - invite with F4 or /ginvite USER"
+                f"group '{name.strip()}' created - invite with /ginvite USER"
             )
         except StoreError as exc:
             self.status = f"error: {exc}"
@@ -960,7 +943,7 @@ class App:
     def _action_invite_group(self, scr, gid: Optional[str] = None) -> None:
         gid = gid or self._current_gid()
         if gid is None:
-            self.status = "open a group first, then F4 (or /ginvite USER) to invite"
+            self.status = "open a group first, then /ginvite USER to invite"
             return
         gname = self.s.config["groups"][gid]["name"]
         name = self._prompt(scr, f"invite user to #{gname}: ")
@@ -990,7 +973,7 @@ class App:
             self.s.config["groups"].items(), key=lambda kv: kv[1]["name"]
         )
         if not groups:
-            self.status = "no groups yet - create one with F3 or /group NAME"
+            self.status = "no groups yet - create one with /group NAME"
             return
         choice = self._popup(
             scr, f"invite {name} to", [f"#{g['name']}" for _, g in groups]
@@ -1031,7 +1014,7 @@ class App:
 
     def _context_menu(self, scr, at: Optional[Tuple[int, int]] = None) -> None:
         """The selected item's menu: from a right-click (``at`` the
-        pointer), F9, the key bar or /menu (under the item)."""
+        pointer), or /menu (under the item)."""
         if not self.items or self.items[self.sel][0] == "hdr":
             self.status = "nothing selected - select a chat, group, invite or user"
             return
@@ -1063,7 +1046,7 @@ class App:
         As a menu (``pick``) it returns the index of the line chosen with
         Enter or a click, or None for Esc or a click outside it. Otherwise it
         shows text, scrolling with the arrows, PgUp/PgDn and the wheel, and
-        Esc, Enter, q, F1 or any click closes it."""
+        Esc, Enter, q, any click, or the key that opened it closes it."""
         chosen = 0
         first = 0
         scr.timeout(-1)
@@ -1208,10 +1191,10 @@ class App:
             while True:
                 rows, cols = scr.getmaxyx()
                 line = tail(f" {label}{buf}", cols - 2)
-                _put(scr, rows - 2, 0, pad(line, cols - 1),
+                _put(scr, rows - 1, 0, pad(line, cols - 1),
                      curses.color_pair(CP_STATUS))
                 try:
-                    scr.move(rows - 2, cells(line))
+                    scr.move(rows - 1, cells(line))
                 except curses.error:
                     pass
                 scr.refresh()
