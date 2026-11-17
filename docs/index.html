@@ -511,7 +511,7 @@ footer .quality span b { color: var(--green); }
         <text x="352" y="135" fill="#e3b341" font-size="12">users/&lt;name&gt;/config.enc 🔒</text>
         <text x="352" y="155" fill="#e3b341" font-size="12">invites/&lt;name&gt;/&lt;id&gt;.json 🔒</text>
         <text x="352" y="175" fill="#e3b341" font-size="12">replies/&lt;name&gt;/&lt;id&gt;.json 🔒</text>
-        <text x="352" y="195" fill="#e3b341" font-size="12">dm/&lt;a&gt;__&lt;b&gt;/&lt;ts&gt;.json 🔒</text>
+        <text x="352" y="195" fill="#e3b341" font-size="12">dm/&lt;hidden&gt;/&lt;ts&gt;.json 🔒</text>
         <text x="352" y="215" fill="#c9d1d9" font-size="12">groups/&lt;gid&gt;/meta.json</text>
         <text x="352" y="235" fill="#e3b341" font-size="12">groups/&lt;gid&gt;/msgs/… 🔒</text>
         <text x="470" y="272" text-anchor="middle" fill="#8b97a8" font-size="12">🔒 = ciphertext at rest (AEAD)</text>
@@ -540,7 +540,7 @@ footer .quality span b { color: var(--green); }
   <span class="dir">users/&lt;name&gt;/</span><span class="enc">config.enc</span>        <span class="c"># client config, passphrase-encrypted</span>
   <span class="dir">invites/&lt;name&gt;/</span><span class="enc">&lt;id&gt;.json</span>       <span class="c"># sealed invites pushed TO &lt;name&gt;</span>
   <span class="dir">replies/&lt;name&gt;/</span><span class="enc">&lt;id&gt;.json</span>       <span class="c"># sealed invite replies</span>
-  <span class="dir">dm/&lt;a&gt;__&lt;b&gt;/</span><span class="enc">&lt;ts&gt;-&lt;rand&gt;.json</span>   <span class="c"># DMs, pair-key encrypted</span>
+  <span class="dir">dm/&lt;hidden&gt;/</span><span class="enc">&lt;ts&gt;-&lt;rand&gt;.json</span>   <span class="c"># DMs, pair-key encrypted</span>
   <span class="dir">groups/&lt;gid&gt;/</span>meta.json         <span class="c"># public group metadata</span>
   <span class="dir">groups/&lt;gid&gt;/msgs/</span><span class="enc">&lt;...&gt;.json</span>   <span class="c"># group msgs, group-key encrypted</span></pre>
     </div>
@@ -580,7 +580,7 @@ footer .quality span b { color: var(--green); }
       <ul>
         <li>No forward secrecy or key rotation — a leaked private key exposes past messages.</li>
         <li>Sender authentication is by conversation-key possession only.</li>
-        <li>Traffic analysis: filenames reveal timing, directory names reveal who talks to whom.</li>
+        <li>Traffic analysis: DM directory names are hidden, but filenames reveal timing and file ownership reveals who writes where.</li>
         <li>Group removal is cooperative — the group key is not rotated when someone is removed.</li>
       </ul>
     </div>

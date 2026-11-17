@@ -14,7 +14,7 @@ database and no server process. The layout:
      users/<name>/config.enc        that user's client config, encrypted
      invites/<name>/<id>.json       sealed invites pushed TO <name>
      replies/<name>/<id>.json       sealed invite replies pushed TO <name>
-     dm/<a>__<b>/<ts>-<rand>.json   direct messages, pair-key encrypted
+     dm/<hidden>/<ts>-<rand>.json   direct messages, pair-key encrypted
      groups/<gid>/meta.json         group metadata, name encrypted
      groups/<gid>/msgs/<...>.json   group messages, group-key encrypted
      beacons/<name>.<device>.json   presence, typing and read receipts
@@ -47,6 +47,13 @@ drop directories, only the group's owner can remove other people's message
 files, so where ``groups/`` is not writable by everyone the directory goes
 when the owner's client next runs; every member's client stops showing it
 either way.
+
+**DM directories** (PAF-008) are named ``dm/<32 hex characters>``,
+derived from the pair key, which only the two people can compute
+(:doc:`security`, *What a listing still shows*). Directories named
+``dm/<a>__<b>`` by earlier versions are still read; each client moves the
+message files it owns into the new directory and removes the old one when
+it is empty. A contact still on 0.x keeps the old name until they upgrade.
 
 **Beacons** (PAF-005). Each client keeps one file,
 ``beacons/<name>.<device>.json``, where ``<device>`` is eight hex characters

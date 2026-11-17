@@ -23,10 +23,33 @@ Out of scope for v1
 
 * Forward secrecy / key rotation.
 * Sender authentication beyond conversation-key possession.
-* Traffic analysis (filenames reveal timing; directory names reveal who
-  talks to whom). Group names are encrypted in ``meta.json``, but its owner
+* Traffic analysis. DM directory names no longer show who talks to whom
+  (*What a listing still shows*, below), but file names reveal timing, and
+  file ownership reveals who writes where. Group names are encrypted in ``meta.json``, but its owner
   and the number and timing of a group's messages are visible.
 * Revoking group keys.
+
+What a listing still shows
+--------------------------
+
+Since 2.0, a DM directory is named ``dm/<32 hex characters>``, the first
+16 bytes of ``HKDF-SHA256(pair key, "paf-dm-dir-v2")``. The pair key comes
+from the two users' P-256 ECDH, so only those two can compute the name or
+tell whose it is; the AEAD's associated data still names the pair, so a file
+cannot be moved into another pair's directory unnoticed. Anyone who can list
+the shared directory still sees:
+
+* how many DMs and groups exist, and how many messages each holds;
+* sizes and times: message file names begin with their send time, and every
+  file has a size and modification time;
+* who wrote each file: on a multi-user system each message file is owned by
+  its sender's Unix account, so ``ls -l`` in a DM directory shows the two
+  accounts writing there. Encryption cannot hide this; only a shared service
+  account or a setuid helper could;
+* user names, group owners and presence (below);
+* while a pair moves from 1.x, the old ``dm/<a>__<b>`` directory, until both
+  have run 2.0: each client moves the files it owns (the sticky bit lets
+  only a file's owner move it) and removes the old directory once empty.
 
 Search
 ------

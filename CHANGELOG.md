@@ -11,6 +11,31 @@ stops working the way it did. `CLAUDE.md` has the rest.
 Sections 0.1.0 to 0.1.3 were written afterwards, from the git history, and
 are dated by their uploads to PyPI. Numbers in brackets are pull requests.
 
+## 2.0.0 — 2026-11-17
+
+DM directories no longer show who talks to whom (PAF-008). This is 2.0.0
+because a 1.x client looks for DMs under `dm/<a>__<b>` and does not find
+what 2.0 writes: upgrade everyone who shares a directory.
+
+### Changed
+
+- **DM directories are named from the pair key**: `dm/<32 hex characters>`,
+  the first 16 bytes of HKDF-SHA256 over the two users' P-256 shared secret.
+  Only the two of them can compute it; the AEAD's associated data still
+  names the pair, so messages decrypt unchanged wherever they sit.
+- **Old directories are migrated without losing messages.** 2.0 reads both
+  `dm/<a>__<b>` and the new directory, and each client moves the message
+  files it owns into the new one (the sticky bit lets only a file's owner
+  move it), removing the old directory once it is empty. A contact still on
+  0.x keeps the old name until they upgrade.
+
+### Added
+
+- **Docs: what a directory listing still shows**: how many DMs and messages
+  there are, sizes and times, and, on a multi-user system, which Unix
+  account owns each message file, which encryption cannot hide (README,
+  `docs/security.rst`).
+
 ## 1.4.0 — 2026-11-17
 
 Search every conversation (PAF-006).
