@@ -1300,13 +1300,14 @@ class HelpAndKeyReferenceTest(TuiCase):
 
     def test_help_scrolls(self):
         a = Session.register(self.shared, "alice", "pw")
-        # 32 lines in a 20-line box: the last one shows only once scrolled
+        # more lines than a 20-line box: the last one shows only once scrolled
         app, scr = self.run_app(a, [curses.KEY_F1, ESC, -1])
         self.assertNotIn(self.LAST_HELP_LINE, scr.rendered())
         self.assertIn("▼", scr.rendered())
         keys = [curses.KEY_F1, curses.KEY_DOWN, curses.KEY_UP,
                 curses.KEY_NPAGE, curses.KEY_PPAGE, MOUSE, MOUSE,
-                curses.KEY_NPAGE, curses.KEY_RESIZE, MOUSE, MOUSE, MOUSE,
+                curses.KEY_NPAGE, curses.KEY_NPAGE, curses.KEY_RESIZE,
+                MOUSE, MOUSE, MOUSE,
                 ESC, -1]
         events = [ev(40, 10, WHEEL_DOWN), ev(40, 10, WHEEL_UP),
                   ev(40, 10, B1_PRESS), ev(40, 10, B3_RELEASE)]

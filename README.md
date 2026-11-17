@@ -58,6 +58,11 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
   and "✓ read by bob" under your newest message. Each client keeps one small,
   encrypted beacon file in the shared directory. On by default;
   `/presence off` (or `paf presence off`) stops writing it.
+* **Search** — `/search WORDS` (or Ctrl-F) finds every message containing all
+  the words, ignoring case, in every chat and group you can read. Hits are
+  listed by conversation, newest first; Enter opens the conversation at the
+  message. Esc cancels a search in progress. What is decrypted stays in
+  memory: no index is written anywhere.
 * **See who's around** — registered users you have not connected with yet
   are listed under USERS in the left pane; double-click one (or select it
   and press Enter) to send a chat invite.
@@ -234,6 +239,7 @@ Ctrl-N/Ctrl-G/Ctrl-O itself):
 /rename NAME     rename the open group (its owner only)
 /delete          delete the open group for everyone (its owner only)
 /presence on|off share when you are active, typing, and what you have read
+/search WORDS    every message containing all the words, in every chat and group
 /menu            the selected item's menu
 /help            the key reference, over an open conversation
 /quit            exit
@@ -261,6 +267,7 @@ paf -d /srv/paf -u alice rename-group "book club" "reading group"
 paf -d /srv/paf -u alice delete-group "reading group"
 paf -d /srv/paf -u alice presence              # contacts: active / idle / away
 paf -d /srv/paf -u alice presence off          # stop sharing yours
+paf -d /srv/paf -u alice search pizza friday    # messages with both words
 paf -d /srv/paf -u bob   status                # contacts, groups, unread
 ```
 
