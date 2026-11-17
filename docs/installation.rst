@@ -4,7 +4,46 @@
 Installation
 ============
 
-Requires Python ≥ 3.9 (Linux). From PyPI:
+The single file
+---------------
+
+phone_a_friend ships as one file, ``paf.pyz``, attached to every
+`GitHub release <https://github.com/MartinGallagher-code/phone_a_friend/releases/latest>`_.
+Download it anywhere you can write, and run it. It needs no root, no pip and
+no installation:
+
+.. code-block:: bash
+
+   python3 paf.pyz --help       # or: chmod +x paf.pyz && ./paf.pyz
+   alias paf='python3 ~/paf.pyz'
+
+What the host needs:
+
+* **Python 3.9 or newer.** RHEL 9 and Rocky 9 (3.9), Fedora, Debian 11+
+  (3.9+) and Ubuntu 22.04+ (3.10+) qualify. RHEL 8's default ``python3`` is
+  3.6, which is too old, and ``paf.pyz`` says so.
+* **The distribution's** ``python3-cryptography``, which is often installed
+  already. Without it, ``paf.pyz`` prints one line naming the package and
+  exits with status 1. Ask your administrator for it:
+
+  .. code-block:: bash
+
+     sudo dnf install python3-cryptography     # RHEL, Rocky, Fedora
+     sudo apt install python3-cryptography     # Debian, Ubuntu
+
+The file holds only phone_a_friend's own Python code. ``cryptography`` cannot
+go in it: its compiled extension does not import from a zip, and the PyPI
+wheel would bring its own OpenSSL, which is not FIPS-validated. Using the
+system's package binds paf to the system OpenSSL, which on RHEL 9 or Rocky 9
+in FIPS mode is the validated module (see *On a FIPS host* below).
+
+To build it from a checkout: ``python3 tools/build_pyz.py`` writes
+``dist/paf.pyz``.
+
+From PyPI
+---------
+
+Requires Python ≥ 3.9 (Linux):
 
 .. code-block:: bash
 

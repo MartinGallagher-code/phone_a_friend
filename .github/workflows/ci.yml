@@ -73,6 +73,74 @@ jobs:
           paf -d "$D" -u bob   --passphrase pw-b read --to alice | grep -q "hello"
           ! grep -r "hello" "$D" --include="*.json" -l | grep -q . || exit 1
 
+  pyz:
+    name: paf.pyz (build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the single file
+        run: python tools/build_pyz.py paf.pyz
+      - name: It holds no compiled code
+        run: |
+          python -m zipfile -l paf.pyz
+          ! python -m zipfile -l paf.pyz | grep -E '\.(so|pyd)\b'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paf.pyz
+          path: paf.pyz
+          retention-days: 7
+
+  pyz-rocky:
+    # The single file on a clean Rocky Linux 9: python3 and the distribution's
+    # python3-cryptography from dnf, no pip, run by a user without root.
+    name: paf.pyz (Rocky Linux 9, no pip, no root)
+    needs: pyz
+    runs-on: ubuntu-latest
+    container: quay.io/rockylinux/rockylinux:9
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: paf.pyz
+      - name: Install python3-cryptography, and nothing else
+        run: |
+          dnf -y -q install python3-cryptography
+          ! python3 -m pip --version
+          useradd -m chat
+          install -m 0644 paf.pyz /home/chat/paf.pyz
+      - name: Two users talk through paf.pyz, in and out of FIPS mode
+        run: |
+          for mode in off on; do
+            E=""; if [ "$mode" = on ]; then E="OPENSSL_FORCE_FIPS_MODE=1"; fi
+            su chat -c "
+              set -e
+              export PAF_FIPS_WARNING=0 $E
+              cd ~ && D=\$(mktemp -d) && P='python3 paf.pyz -d '\$D
+              python3 paf.pyz --help > /dev/null
+              python3 paf.pyz --version | tail -1
+              \$P -u alice --passphrase pw-a register
+              \$P -u bob   --passphrase pw-b register
+              \$P -u alice --passphrase pw-a invite bob
+              \$P -u bob   --passphrase pw-b accept --from alice
+              \$P -u alice --passphrase pw-a send --to bob hello
+              \$P -u bob   --passphrase pw-b read --to alice | grep -q hello
+            "
+          done
+      - name: Without python3-cryptography it names the package and exits 1
+        run: |
+          rpm -e --nodeps python3-cryptography
+          set +e
+          su chat -c "cd ~ && python3 paf.pyz --version" > out.txt 2> err.txt
+          code=$?
+          set -e
+          cat err.txt
+          test "$code" = 1
+          test ! -s out.txt
+          test "$(wc -l < err.txt)" = 1
+          grep -q python3-cryptography err.txt
+
   version:
     name: version
     runs-on: ubuntu-latest

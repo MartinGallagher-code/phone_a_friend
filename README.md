@@ -96,7 +96,22 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
 
 ## Install
 
-Requires Python ≥ 3.9 (Linux). From PyPI:
+**One file, no root, no pip.** Download `paf.pyz` from the
+[latest release](https://github.com/MartinGallagher-code/phone_a_friend/releases/latest)
+and run it:
+
+```bash
+python3 paf.pyz --help       # or: chmod +x paf.pyz && ./paf.pyz
+```
+
+It needs Python ≥ 3.9 and the distribution's `python3-cryptography`, which
+most hosts already have (RHEL 9, Rocky 9, Fedora, Debian 11+, Ubuntu
+22.04+). Without it, `paf.pyz` says so in one line and exits. The file
+carries no compiled code and no OpenSSL of its own, so on a FIPS host it uses
+the system's FIPS-validated OpenSSL. RHEL 8's default `python3` is 3.6, too
+old.
+
+Or from PyPI:
 
 ```bash
 pip install phoneafriend     # installs the `paf` command
@@ -109,6 +124,7 @@ pip install .             # or `pip install -e .` for development
 # or, without installing:
 pip install -r requirements.txt
 alias paf='python -m phone_a_friend'
+python3 tools/build_pyz.py   # builds dist/paf.pyz
 ```
 
 ## Set up a shared directory
