@@ -19,6 +19,10 @@ encryption. It is on PyPI as `phoneafriend` (no separators), the command is
 - `phone_a_friend/tui.py`: the curses TUI. `phone_a_friend/__main__.py`: the
   `paf` command and its subcommands.
 
+`tools/build_pyz.py` builds `paf.pyz`, the single-file zipapp (PAF-007);
+`tools/pyz_main.py` is its root `__main__.py` and must stay parseable by
+Python 3.6, so it can tell an old host what is missing.
+
 The one dependency is `cryptography`, and Python 3.9 is the floor
 (`requires-python = ">=3.9"`, and CI tests 3.9). README.md is the manual and
 also the PyPI long description, so its links are absolute. `docs/*.rst` is

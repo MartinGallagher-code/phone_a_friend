@@ -11,6 +11,31 @@ stops working the way it did. `CLAUDE.md` has the rest.
 Sections 0.1.0 to 0.1.3 were written afterwards, from the git history, and
 are dated by their uploads to PyPI. Numbers in brackets are pull requests.
 
+## 1.1.0 — 2026-11-17
+
+phone_a_friend as one file, `paf.pyz`, that runs with `python3 paf.pyz`, with
+no root, no pip and nothing to install (PAF-007).
+
+### Added
+
+- **`paf.pyz`**, a zipapp of the pure-Python package, attached to every
+  GitHub release by `publish.yml`. `tools/build_pyz.py` builds it. It holds
+  no compiled code and no OpenSSL: it uses the host's
+  `python3-cryptography`, so on a FIPS host it runs on the system's
+  validated OpenSSL.
+- **A plain message when the host cannot run it.** Without
+  `python3-cryptography`, `paf.pyz` prints one line naming the package and
+  exits with status 1, and on a Python older than 3.9 it says which version
+  it needs.
+- **CI**: builds `paf.pyz`, checks it holds no `.so`, then on a clean Rocky
+  Linux 9 container with only dnf's `python3-cryptography` (no pip), runs
+  it as an unprivileged user: two users register, invite, accept, send and
+  read, with OpenSSL in and out of FIPS mode; then removes the package and
+  checks the one-line message and exit 1. `tests/test_pyz.py` does the same
+  locally.
+- **Docs**: the installation page and README lead with the single file and
+  say which distributions' Python qualifies.
+
 ## 1.0.0 — 2026-11-17
 
 phone_a_friend now uses only FIPS-approved cryptography (PAF-003). This is
