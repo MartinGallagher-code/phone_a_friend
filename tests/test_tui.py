@@ -1178,11 +1178,12 @@ class MenuTest(TuiCase):
                          + [ENTER, -1], mouse_events=[right_g2])
             rm.assert_called_once_with(g2, "alice")
             # Leave: asks first
-            self.run_app(b, [MOUSE, curses.KEY_UP, ENTER, "n", ENTER, -1],
+            down3 = [curses.KEY_DOWN] * 3
+            self.run_app(b, [MOUSE] + down3 + [ENTER, "n", ENTER, -1],
                          mouse_events=[right_g2])
             self.assertIn(g2, b.config["groups"])
             app, _ = self.run_app(
-                b, [MOUSE, curses.KEY_UP, ENTER, "y", ENTER, -1],
+                b, [MOUSE] + down3 + [ENTER, "y", ENTER, -1],
                 mouse_events=[right_g2],
             )
             rm.assert_called_with(g2, "bob")

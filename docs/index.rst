@@ -34,6 +34,11 @@ Features
 * **Create groups and invite people** — each group has a random symmetric
   key; inviting someone pushes the group key to them (sealed to their public
   key). Any member can invite others.
+* **Rename and delete groups** — the group's owner (whoever created it) can
+  rename it (``/rename NAME``) or delete it (``/delete``). A deleted group stays
+  readable, read-only, for 3 days, marked "(deleted)", and then the next
+  client to run removes it. Group names are encrypted, so a listing of the
+  shared directory does not show them.
 * **Unfriend and remove** — stop chatting with a contact (``/unfriend``); a
   future invite rebuilds the friendship and the previous chat becomes
   readable again. Any group member can remove another member (``/gremove``),

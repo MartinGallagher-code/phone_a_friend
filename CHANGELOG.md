@@ -11,6 +11,30 @@ stops working the way it did. `CLAUDE.md` has the rest.
 Sections 0.1.0 to 0.1.3 were written afterwards, from the git history, and
 are dated by their uploads to PyPI. Numbers in brackets are pull requests.
 
+## 1.2.0 — 2026-11-17
+
+Groups can be renamed and deleted, and their names are no longer in the
+clear (PAF-004).
+
+### Added
+
+- **`/rename NAME` and `/delete`** for the open group, also on the group's
+  right-click menu, and `paf rename-group` / `paf delete-group`. Only the
+  group's owner (the user who created it, as `meta.json` records) may; the
+  others are told who can.
+- **A deleted group stays readable for 3 days.** It is marked "(deleted)"
+  in the left pane, its title says until when, and it is read-only. After 3
+  days the next client to run removes it: it renames the directory aside and
+  then deletes it, so two clients doing it at once do no harm.
+- **Members see a rename** on their next poll, with a notice.
+
+### Changed
+
+- **Group names are encrypted** in `meta.json`, under a key derived from the
+  group key, so a listing of the shared directory no longer shows them. The
+  owner's client encrypts a name written by an earlier version the next time
+  it runs; until then members read it as before.
+
 ## 1.1.0 — 2026-11-17
 
 phone_a_friend as one file, `paf.pyz`, that runs with `python3 paf.pyz`, with

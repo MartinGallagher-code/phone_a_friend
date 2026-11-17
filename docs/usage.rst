@@ -99,6 +99,8 @@ Ctrl-N/Ctrl-G/Ctrl-O itself):
    /ginvite USER    invite a user to the open (or selected) group
    /gremove USER    remove a user from the open (or selected) group
    /leave           leave the open (or selected) group
+   /rename NAME     rename the open group (its owner only)
+   /delete          delete the open group for everyone (its owner only)
    /menu            the selected item's menu
    /help            the key reference, over an open conversation
    /quit            exit
@@ -124,4 +126,6 @@ prompt):
    paf -d /srv/paf -u alice remove bob            # unfriend
    paf -d /srv/paf -u alice remove bob --group "book club"
    paf -d /srv/paf -u alice remove alice --group "book club"   # leave
+   paf -d /srv/paf -u alice rename-group "book club" "reading group"
+   paf -d /srv/paf -u alice delete-group "reading group"
    paf -d /srv/paf -u bob   status                # contacts, groups, unread

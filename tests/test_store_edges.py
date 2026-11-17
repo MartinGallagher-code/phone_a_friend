@@ -85,7 +85,8 @@ class SharedDirTest(unittest.TestCase):
         gid = s.create_group("g")
         meta = self.shared.read_group_meta(gid)
         self.assertEqual(meta["owner"], "alice")
-        self.assertEqual(meta["name"], "g")
+        self.assertNotIn("name", meta)  # encrypted, as name_blob (PAF-004)
+        self.assertEqual(s.group_meta(gid)["name"], "g")
 
 
 class SessionEdgeTest(unittest.TestCase):
