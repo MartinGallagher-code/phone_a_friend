@@ -107,7 +107,26 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
   [Migrating from 0.x](https://phoneafriend.readthedocs.io/en/latest/security.html#migrating-from-0-x).
 * Out of scope for v1: forward secrecy/key rotation, sender authentication
   beyond conversation-key possession, traffic analysis (filenames reveal
-  timing; directory names reveal who talks to whom), and revoking group keys.
+  timing; file ownership and counts are visible, below), and revoking group
+  keys.
+
+### What a directory listing still shows
+
+DM directories are named `dm/<32 hex characters>`, derived from the pair's
+shared key, so only the two people in a DM can tell whose it is. Anyone who
+can list the shared directory still sees:
+
+* **how many** DMs and groups there are, and how many messages each holds;
+* **sizes and times**: each message's file name starts with when it was
+  sent, and every file has a size and modification time;
+* **who wrote each file**: on a multi-user system every message file is
+  owned by its sender's Unix account, so `ls -l` in a DM directory shows
+  the two accounts writing there. Encryption cannot hide that; only a
+  shared service account or a setuid helper could;
+* user names (`users/`, `invites/`, `replies/`, `beacons/`), group owners,
+  and when people are active (see Presence in the security docs);
+* while a pair moves from 1.x, the old `dm/<a>__<b>` directory, until both
+  people have run 2.0 once (each client moves the files its user owns).
 
 ## Install
 
@@ -307,7 +326,7 @@ tag `v0.1.0`) builds, checks, and uploads the sdist and wheel.
   users/<name>/config.enc        that user's client config, encrypted
   invites/<name>/<id>.json       sealed invites pushed TO <name>
   replies/<name>/<id>.json       sealed invite replies pushed TO <name>
-  dm/<a>__<b>/<ts>-<rand>.json   direct messages, pair-key encrypted
+  dm/<hidden>/<ts>-<rand>.json   direct messages, pair-key encrypted
   groups/<gid>/meta.json         public group metadata
   groups/<gid>/msgs/<...>.json   group messages, group-key encrypted
 ```

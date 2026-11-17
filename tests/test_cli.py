@@ -298,7 +298,8 @@ class CliTest(unittest.TestCase):
             "send", "--to", "bob", "real",
         )
         shared = SharedDir(self.tmp)
-        with open(os.path.join(shared.dm_dir("alice", "bob"), "5-bad.json"), "w") as fh:
+        dm_dir = Session.login(shared, "alice", "pw-a").dm_directory("bob")
+        with open(os.path.join(dm_dir, "5-bad.json"), "w") as fh:
             json.dump({"blob": "AAAA"}, fh)
         out, _ = self.run_cli(
             "-d", self.tmp, "-u", "bob", "--passphrase", "pw-b",

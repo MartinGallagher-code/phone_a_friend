@@ -280,7 +280,7 @@ class SessionEdgeTest(unittest.TestCase):
         b.accept_invite(fname, payload)
         a.process_replies()
         a.send_message("dm", "bob", "real")
-        dm_dir = self.shared.dm_dir("alice", "bob")
+        dm_dir = a.dm_directory("bob")
         with open(os.path.join(dm_dir, "111-bad.json"), "w") as fh:
             fh.write("{ nope")
         with open(os.path.join(dm_dir, "112-shape.json"), "w") as fh:

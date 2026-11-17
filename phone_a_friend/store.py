@@ -11,7 +11,8 @@ shared directory. Layout::
       users/<name>/config.enc        that user's encrypted client config
       invites/<name>/<id>.json       sealed invites pushed TO <name>
       replies/<name>/<id>.json       sealed invite replies pushed TO <name>
-      dm/<a>__<b>/<ts>-<rand>.json   direct messages (pair-key encrypted)
+      dm/<hidden>/<ts>-<rand>.json   direct messages (pair-key encrypted); the
+                                     directory is named from the pair key
       groups/<gid>/meta.json         group metadata (name encrypted)
       groups/<gid>/msgs/<...>.json   group messages (group-key encrypted)
       beacons/<name>.<device>.json   presence, typing and read receipts
@@ -145,6 +146,8 @@ class SharedDir:
         return os.path.join(self.root, "replies", name)
 
     def dm_dir(self, a: str, b: str) -> str:
+        """The DM directory by its names, as before 2.0: still read, and
+        emptied into the hidden one (:meth:`Session.dm_directory`)."""
         lo, hi = sorted([a, b])
         return os.path.join(self.root, "dm", f"{lo}__{hi}")
 
@@ -206,6 +209,8 @@ class Session:
         self.priv = crypto.private_key_from_bytes(crypto.b64d(config["priv"]))
         self.pub = crypto.public_key_bytes(self.priv)
         self._legacy = None  # the 0.x X25519 key, loaded when first needed
+        self._hidden_dm: Dict[str, str] = {}  # contact -> hidden DM directory
+        self._moved_dm: set = set()  # contacts whose old directory we emptied
 
     # ------------------------------------------------------------ accounts
     @staticmethod
@@ -885,14 +890,80 @@ class Session:
                 raise StoreError(
                     f"no key exchanged with {target} - send or accept an invite first"
                 )
-            directory = self.shared.dm_dir(self.name, target)
-            aad = os.path.basename(directory).encode()
+            directory, legacy = self._dm_dirs(target)
+            # the AAD keeps naming the pair, so files decrypt in either place
+            aad = os.path.basename(self.shared.dm_dir(self.name, target)).encode()
             return directory, b"paf-dm|" + aad
         if kind == "grp":
             if target not in self.config["groups"]:
                 raise StoreError("no key for that group - accept an invite first")
             return self.shared.group_msgs_dir(target), b"paf-grp|" + target.encode()
         raise StoreError(f"bad conversation kind: {kind}")
+
+    # DM directories are named dm/<32 hex characters> derived from the pair
+    # key, which only the two parties can compute, so a listing does not
+    # show who talks to whom (PAF-008). Until a contact has a P-256 key the
+    # directory keeps its old name, dm/<a>__<b>.
+    def _dm_dirs(self, target: str) -> Tuple[str, Optional[str]]:
+        """(directory to write, old-named directory to read too, or None)."""
+        legacy = self.shared.dm_dir(self.name, target)
+        hidden = self._hidden_dm.get(target)
+        if hidden is None:
+            try:
+                key = crypto.pair_key(self.priv, self._contact_pub(target))
+            except StoreError:
+                return legacy, None
+            name = crypto.hkdf(key, b"paf-dm-dir-v2").hex()[:32]
+            hidden = self._hidden_dm[target] = os.path.join(
+                self.shared.root, "dm", name
+            )
+        return hidden, legacy
+
+    def dm_directory(self, target: str) -> str:
+        """Where new direct messages with ``target`` go."""
+        return self._conv_location("dm", target)[0]
+
+    def _message_dirs(self, kind: str, target: str) -> List[str]:
+        directory, _ = self._conv_location(kind, target)
+        if kind != "dm":
+            return [directory]
+        hidden, legacy = self._dm_dirs(target)
+        if legacy is not None:
+            self._move_own_dm_files(target, hidden, legacy)
+            return [hidden, legacy]
+        return [hidden]
+
+    def _move_own_dm_files(self, target: str, hidden: str, legacy: str) -> None:
+        """Move the message files we own from dm/<a>__<b> into the hidden
+        directory (the sticky bit lets only a file's owner move it), once a
+        session, and remove the old directory when it is empty."""
+        if target in self._moved_dm:
+            return
+        self._moved_dm.add(target)
+        try:
+            names = os.listdir(legacy)
+        except FileNotFoundError:
+            return
+        _make_dir(hidden, DROP_DIR_MODE)
+        uid = os.getuid()
+        for fname in names:
+            path = os.path.join(legacy, fname)
+            try:
+                if fname.endswith(".json") and os.lstat(path).st_uid == uid:
+                    os.rename(path, os.path.join(hidden, fname))
+            except OSError:
+                continue  # not ours to move: its sender's client will
+        try:
+            os.rmdir(legacy)
+        except OSError:
+            pass  # the peer's files are still there
+
+    def _message_path(self, dirs: List[str], fname: str) -> str:
+        for directory in dirs[1:]:
+            path = os.path.join(directory, fname)
+            if os.path.exists(path):
+                return path
+        return os.path.join(dirs[0], fname)
 
     def _group_key(self, gid: str) -> bytes:
         try:
@@ -942,13 +1013,13 @@ class Session:
         return msg
 
     def list_message_files(self, kind: str, target: str) -> List[str]:
-        directory, _ = self._conv_location(kind, target)
-        try:
-            return sorted(
-                f for f in os.listdir(directory) if f.endswith(".json")
-            )
-        except FileNotFoundError:
-            return []
+        names = set()
+        for directory in self._message_dirs(kind, target):
+            try:
+                names.update(f for f in os.listdir(directory) if f.endswith(".json"))
+            except FileNotFoundError:
+                continue
+        return sorted(names)
 
     def load_messages(
         self, kind: str, target: str, filenames: List[str]
@@ -958,7 +1029,8 @@ class Session:
         A message 0.x wrote is read with the 0.x key; if it is one of ours
         and the conversation has a current key, it is re-encrypted in place
         (only its owner may replace a file in the sticky directory)."""
-        directory, aad = self._conv_location(kind, target)
+        _, aad = self._conv_location(kind, target)
+        dirs = self._message_dirs(kind, target)
         try:
             key: Optional[bytes] = self._conv(kind, target)[1]
         except StoreError:
@@ -966,7 +1038,7 @@ class Session:
         legacy_key = None
         out: Dict[str, dict] = {}
         for fname in filenames:
-            path = os.path.join(directory, fname)
+            path = self._message_path(dirs, fname)
             try:
                 with open(path, "rb") as fh:
                     wrapper = json.loads(fh.read())
@@ -1020,13 +1092,13 @@ class Session:
             for gid, g in sorted(self.config["groups"].items())
         ]
         for kind, target, label in convs:
-            directory, _ = self._conv_location(kind, target)
+            dirs = self._message_dirs(kind, target)
             files = self.list_message_files(kind, target)
             self.load_messages(kind, target, files)
             remaining = 0
             for fname in files:
                 try:
-                    with open(os.path.join(directory, fname), "rb") as fh:
+                    with open(self._message_path(dirs, fname), "rb") as fh:
                         wrapper = json.loads(fh.read())
                     remaining += isinstance(wrapper, dict) and "v" not in wrapper
                 except (OSError, ValueError):

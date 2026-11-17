@@ -102,7 +102,7 @@ class FlowTest(unittest.TestCase):
         eve.config["contacts"]["alice"] = crypto.b64e(
             crypto.public_key_bytes(crypto.generate_private_key())
         )
-        dm_dir = self.shared.dm_dir("alice", "bob")
+        dm_dir = a.dm_directory("bob")
         files = sorted(f for f in os.listdir(dm_dir) if f.endswith(".json"))
         self.assertEqual(len(files), 1)
         # decrypt attempt against the real ciphertext files, wrong key: skipped

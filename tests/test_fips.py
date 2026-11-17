@@ -268,7 +268,7 @@ class FormatTest(unittest.TestCase):
         b.accept_invite(*b.list_invites()[0])
         a.process_replies()
         a.send_message("dm", "bob", "real")
-        d = self.shared.dm_dir("alice", "bob")
+        d = a.dm_directory("bob")
         f = os.listdir(d)[0]
         with open(os.path.join(d, f)) as fh:
             w = json.load(fh)
@@ -462,7 +462,7 @@ class MigrationTest(unittest.TestCase):
         self.assertEqual(self.texts(b, "dm", "alice"), ["hi bob", "hi alice"])
         self.assertEqual(a.migrate(), [])
         self.assertEqual(
-            set(self._versions(self.shared.dm_dir("alice", "bob")).values()), {2}
+            set(self._versions(a.dm_directory("bob")).values()), {2}
         )
         self.assertEqual(set(self._versions(gdir).values()), {2})
         a.send_message("dm", "bob", "upgraded")
