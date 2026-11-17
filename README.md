@@ -38,7 +38,15 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
   generated for you.
 * **Invite people to chat** — key exchange is push-based: the invite pushes
   your public key to them; accepting pushes their public key back to you.
-  Without an accepted exchange, messages cannot be sent or decrypted.
+  Without an accepted exchange, messages cannot be sent or decrypted. Every
+  invite and reply is checked against the sender's registered key before it
+  is acted on, and a contact's key is never swapped behind your back (see
+  *Security model*, below).
+* **Verify a contact** — `/verify USER` (or `paf verify USER`) shows the
+  pair's *safety number*, 60 digits that are the same on both sides. Compare
+  it in person or by phone; if it matches, mark the contact verified and
+  the left pane shows `✓` beside them. If a contact's key ever changes, paf
+  keeps the old one, shows `!`, and says "bob's key changed — /verify bob".
 * **Create groups and invite people** — each group has a random symmetric
   key; inviting someone pushes the group key to them (sealed to their public
   key). Any member can invite others.
@@ -96,6 +104,24 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
 * Direct messages are encrypted with a key derived from the static-static
   P-256 Diffie-Hellman secret of the two participants — readable only by
   someone holding one of the two private keys **and** the peer's public key.
+  That holds as long as the key you hold for a contact really is theirs,
+  which is what the next points are for.
+* **Invites and replies are checked before anything is done with them**
+  (since 2.1): the sender they name must be a registered user, a key they
+  carry must be the one that user's `identity.json` publishes, an
+  acceptance must answer an invite you sent, and on a multi-user system the
+  file must belong to the sender's own Unix account. Declines, group joins
+  and removals carry no key, so they are signed (HMAC-SHA256 under the
+  sender's and recipient's ECDH secret; a group removal also needs the group
+  key, so only a member can send one). Anything else is refused, with a
+  notice naming who it claimed to be from. No one on the share can put their
+  key in place of a contact's, invite you in someone else's name, end your
+  chats or throw you out of a group.
+* **A contact's key is never replaced.** If their `identity.json` starts
+  publishing another key (they made their account again, or someone
+  tampered with it), paf keeps the old one, marks them `!`, and tells you to
+  `/verify` them. The safety number then shown is for the new key; accept
+  it only if it matches theirs.
 * Group messages are encrypted with the group's symmetric key, held only by
   members who accepted an invite.
 * Invites and invite replies are "sealed" (ephemeral P-256 ECDH → HKDF →
@@ -105,10 +131,13 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
   that 0.x wrote with X25519, ChaCha20-Poly1305 and scrypt are migrated, not
   dropped: see
   [Migrating from 0.x](https://phoneafriend.readthedocs.io/en/latest/security.html#migrating-from-0-x).
-* Out of scope for v1: forward secrecy/key rotation, sender authentication
-  beyond conversation-key possession, traffic analysis (filenames reveal
-  timing; file ownership and counts are visible, below), and revoking group
-  keys.
+* Out of scope: forward secrecy/key rotation; authenticating each
+  *message* beyond conversation-key possession (anyone holding a group's key
+  can write as any member of it); a user's *first* key, which is taken from
+  their `identity.json` on trust, so compare safety numbers for anyone who
+  matters; traffic analysis (filenames reveal timing; file ownership and
+  counts are visible, below); and revoking group keys. See
+  [What is authenticated](https://phoneafriend.readthedocs.io/en/latest/security.html#what-is-authenticated).
 
 ### What a directory listing still shows
 
@@ -173,7 +202,12 @@ sudo chmod 2770 /srv/paf     # rwx for the group, setgid, nothing for others
 ```
 
 The client creates its own subdirectories (drop-boxes get the sticky bit so
-users cannot delete each other's files).
+users cannot delete each other's files). `users/`, `invites/` and `replies/`
+are sticky too, so no one can rename another user's directory away and put
+their own `identity.json` in its place: a new directory gets mode 1777, and
+the client adds the sticky bit to one its user owns. For a directory made
+before 2.1 by someone else, its owner (or root) can run
+`chmod +t /srv/paf/users /srv/paf/invites /srv/paf/replies`.
 
 ## Use
 
@@ -235,7 +269,7 @@ Scrolling the conversation back to the bottom marks it read, as PgDn does.
 
 The menu (right-click or `/menu`) offers, for
 
-* a chat: Open, Unfriend, Invite to a group;
+* a chat: Open, Unfriend, Verify (safety number), Invite to a group;
 * a group: Open, Invite a user, Remove a member, Leave;
 * an invite: Accept, Decline;
 * a name under USERS: Send a chat invite.
@@ -251,6 +285,7 @@ Ctrl-N/Ctrl-G/Ctrl-O itself):
 ```
 /invite USER     invite a user to chat
 /unfriend USER   stop chatting with a user (a new invite can restore it)
+/verify USER     compare safety numbers with a contact, to check their key
 /group NAME      create a group
 /ginvite USER    invite a user to the open (or selected) group
 /gremove USER    remove a user from the open (or selected) group
@@ -280,6 +315,7 @@ paf -d /srv/paf -u alice create-group "book club"
 paf -d /srv/paf -u alice invite bob --group "book club"
 paf -d /srv/paf -u alice send --group "book club" "welcome"
 paf -d /srv/paf -u alice remove bob            # unfriend
+paf -d /srv/paf -u alice verify bob            # safety number; mark verified
 paf -d /srv/paf -u alice remove bob --group "book club"
 paf -d /srv/paf -u alice remove alice --group "book club"   # leave
 paf -d /srv/paf -u alice rename-group "book club" "reading group"

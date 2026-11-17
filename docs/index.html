@@ -561,7 +561,7 @@ footer .quality span b { color: var(--green); }
       <div class="cryptocard">
         <h3>Invites &amp; replies</h3>
         <span class="pipe">ephemeral P-256 ECDH → HKDF → AES-256-GCM</span>
-        <p>"Sealed" to the recipient's public identity key, like a sealed box: only the addressee can open an invite, and each one uses a fresh ephemeral key.</p>
+        <p>"Sealed" to the recipient's public identity key, like a sealed box: only the addressee can open an invite, and each one uses a fresh ephemeral key. Each is checked against the sender's registered key before it is acted on; replies that carry no key are signed with HMAC-SHA256.</p>
       </div>
       <div class="cryptocard">
         <h3>Groups</h3>
@@ -575,11 +575,11 @@ footer .quality span b { color: var(--green); }
       </div>
     </div>
     <div class="honest">
-      <h3>⚠ Honest about scope (v1)</h3>
-      <p>Every ciphertext is authenticated (AEAD) and tampered files are ignored, but some things are deliberately out of scope for v1 — read this before you trust it with anything serious:</p>
+      <h3>⚠ Honest about scope</h3>
+      <p>Every ciphertext is authenticated (AEAD) and tampered files are ignored; invites and replies are checked against the sender's key, and a contact's key is never swapped silently. Some things are deliberately out of scope — read this before you trust it with anything serious:</p>
       <ul>
         <li>No forward secrecy or key rotation — a leaked private key exposes past messages.</li>
-        <li>Sender authentication is by conversation-key possession only.</li>
+        <li>Messages are authenticated by conversation-key possession only: anyone holding a group's key can write as any member. Your first key for someone is taken on trust; compare safety numbers (<code>/verify</code>) for anyone who matters.</li>
         <li>Traffic analysis: DM directory names are hidden, but filenames reveal timing and file ownership reveals who writes where.</li>
         <li>Group removal is cooperative — the group key is not rotated when someone is removed.</li>
       </ul>
@@ -640,6 +640,7 @@ footer .quality span b { color: var(--green); }
         <tr><th>Command</th><th>Action</th></tr>
         <tr><td><code>/invite USER</code></td><td>invite a user to chat</td></tr>
         <tr><td><code>/unfriend USER</code></td><td>stop chatting (a new invite restores it)</td></tr>
+        <tr><td><code>/verify USER</code></td><td>compare safety numbers, to check a contact's key</td></tr>
         <tr><td><code>/group NAME</code></td><td>create a group</td></tr>
         <tr><td><code>/ginvite USER</code></td><td>invite a user to the open group</td></tr>
         <tr><td><code>/gremove USER</code></td><td>remove a user from the open group</td></tr>

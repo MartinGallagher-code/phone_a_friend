@@ -20,6 +20,12 @@ OpenSSL that the ``cryptography`` package is bound to:
   invitees inside a sealed invite; each group's message key is derived from
   it.
 * Key derivation is HKDF-SHA256 (SP 800-56C).
+* Replies that carry no key of their own (a decline, a removal) are signed
+  with HMAC-SHA256 (FIPS 198-1) under a key derived from the static-static
+  ECDH secret of sender and recipient, so only the claimed sender could
+  have written them.
+* A pair's safety number, which two people compare to verify each other's
+  keys, is SHA-256 (FIPS 180-4) over both public keys.
 * The per-user config file is encrypted with a key derived from the user's
   passphrase with PBKDF2-HMAC-SHA256 (SP 800-132); it protects the private
   identity key, contact keys, and group keys.
@@ -36,8 +42,8 @@ from __future__ import annotations
 import base64
 import os
 
-from cryptography.exceptions import InvalidTag
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.exceptions import InvalidSignature, InvalidTag
+from cryptography.hazmat.primitives import hashes, hmac, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -234,3 +240,48 @@ def group_message_key(group_key: bytes, gid: str) -> bytes:
     """The AES-256-GCM key for one group's messages, derived from the group
     key, so the group key is never used directly as a cipher key."""
     return hkdf(group_key, b"paf-grp-v2|" + gid.encode())
+
+
+# ------------------------------------------------------------ authentication
+
+def mac(key: bytes, data: bytes) -> bytes:
+    """HMAC-SHA256 of ``data``."""
+    h = hmac.HMAC(key, hashes.SHA256())
+    h.update(data)
+    return h.finalize()
+
+
+def mac_ok(key: bytes, data: bytes, tag: bytes) -> bool:
+    """Whether ``tag`` is the HMAC-SHA256 of ``data``, compared in constant
+    time."""
+    h = hmac.HMAC(key, hashes.SHA256())
+    h.update(data)
+    try:
+        h.verify(tag)
+    except InvalidSignature:
+        return False
+    return True
+
+
+#: A safety number: SAFETY_GROUPS groups of five digits.
+SAFETY_GROUPS = 12
+
+
+def safety_number(pub_a: bytes, pub_b: bytes) -> str:
+    """The safety number of two public keys: 60 digits in 12 groups of 5,
+    the same whichever order the keys come in, so both people see the same.
+
+    Two SHA-256 blocks over both keys (in sorted order, each a fixed 65
+    bytes) give 64 bytes; each group is 5 of them, as a number, mod 100000.
+    Anyone holding a different key for either person gets other digits."""
+    lo, hi = sorted([pub_a, pub_b])
+    digest = b""
+    for block in (b"\x00", b"\x01"):
+        h = hashes.Hash(hashes.SHA256())
+        h.update(b"paf-safety-number-v1|" + block + lo + hi)
+        digest += h.finalize()
+    groups = (
+        int.from_bytes(digest[i * 5:i * 5 + 5], "big") % 100000
+        for i in range(SAFETY_GROUPS)
+    )
+    return " ".join(f"{g:05d}" for g in groups)

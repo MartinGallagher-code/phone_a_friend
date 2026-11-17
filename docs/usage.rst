@@ -75,13 +75,27 @@ Scrolling the conversation back to the bottom marks it read, as PgDn does.
 
 The menu (right-click or ``/menu``) offers, for
 
-* a chat: Open, Unfriend, Invite to a group;
+* a chat: Open, Unfriend, Verify (safety number), Invite to a group;
 * a group: Open, Invite a user, Remove a member, Leave;
 * an invite: Accept, Decline;
 * a name under USERS: Send a chat invite.
 
 Each item does exactly what its key or slash command does. Esc, or a click
 outside the menu, closes it without doing anything.
+
+Verifying a contact
+-------------------
+
+``/verify bob`` (or Verify in a chat's menu; ``/verify`` alone in an open
+chat) shows your safety number with bob: 60 digits, the same on bob's
+screen. Compare every digit in person or by phone, and if they match, answer
+``y``: bob is marked verified, ``✓`` in the left pane. ``paf verify bob``
+prints the number and asks the same question.
+
+If bob's key changes, paf keeps using the old one, marks bob ``!``, and the
+status line says "bob's key changed — /verify bob". ``/verify bob`` then
+shows the number for the new key; accept it only if it matches what bob
+reads you. How it works: :doc:`security`, *What is authenticated*.
 
 Slash commands
 --------------
@@ -95,6 +109,7 @@ Ctrl-N/Ctrl-G/Ctrl-O itself):
 
    /invite USER     invite a user to chat
    /unfriend USER   stop chatting with a user (a new invite can restore it)
+   /verify USER     compare safety numbers with a contact, to check their key
    /group NAME      create a group
    /ginvite USER    invite a user to the open (or selected) group
    /gremove USER    remove a user from the open (or selected) group
@@ -126,6 +141,7 @@ prompt):
    paf -d /srv/paf -u alice invite bob --group "book club"
    paf -d /srv/paf -u alice send --group "book club" "welcome"
    paf -d /srv/paf -u alice remove bob            # unfriend
+   paf -d /srv/paf -u alice verify bob            # safety number; mark verified
    paf -d /srv/paf -u alice remove bob --group "book club"
    paf -d /srv/paf -u alice remove alice --group "book club"   # leave
    paf -d /srv/paf -u alice rename-group "book club" "reading group"

@@ -44,6 +44,7 @@ VS Code integrated terminal (VS Code binds Ctrl-N/Ctrl-G/Ctrl-O itself)::
 
     /invite USER     invite a user to chat
     /unfriend USER   stop chatting with a user (a new invite can restore it)
+    /verify USER     compare safety numbers with a contact, to check their key
     /group NAME      create a group
     /ginvite USER    invite a user to the open (or selected) group
     /gremove USER    remove a user from the open (or selected) group
@@ -166,6 +167,7 @@ KEY_REFERENCE = [
     "Commands, typed into the input line",
     "  /invite USER   invite a user to chat",
     "  /unfriend USER stop chatting with a user",
+    "  /verify USER   check a contact's key (safety number)",
     "  /group NAME    create a group",
     "  /ginvite USER  invite a user to the open group",
     "  /gremove USER  remove a user from the open group",
@@ -574,7 +576,7 @@ class App:
             attr = curses.color_pair(CP_UNREAD) | curses.A_BOLD
         elif kind == "dm":
             mark = PRESENCE_MARK.get(self._presence(str(data)) or "away")
-            label = f" {mark}{data}"
+            label = f" {mark}{data}" + self._key_mark(str(data))
             label += self._badge(f"dm:{data}")
         elif kind == "pend":
             label = f"  {data} (invited...)"
@@ -593,6 +595,13 @@ class App:
             attr |= curses.color_pair(CP_UNREAD) | curses.A_BOLD
         return label, attr
 
+    def _key_mark(self, name: str) -> str:
+        """After a contact's name: ✓ once their safety number was compared,
+        ! while their key has changed and the new one is not taken."""
+        if name in self.s.config["key_changes"]:
+            return " !"
+        return " ✓" if self.s.is_verified(name) else ""
+
     def _badge(self, conv: str) -> str:
         n = self.unread.get(conv, 0)
         if n <= 0:
@@ -605,7 +614,10 @@ class App:
         kind, target = self.active
         if kind == "dm":
             presence = self._presence(target)
-            return f"chat with {target}" + (f" ({presence})" if presence else "")
+            title = f"chat with {target}" + (f" ({presence})" if presence else "")
+            if target in self.s.config["key_changes"]:
+                return title + f" - key changed: /verify {target}"
+            return title + (" - verified ✓" if self.s.is_verified(target) else "")
         g = self.s.config["groups"].get(target)
         if not g:
             return "?"
@@ -1084,6 +1096,57 @@ class App:
         if self._confirm(scr, f"leave #{gname}? [y/N] "):
             self._remove_from_group(gid, self.s.name)
 
+    # ------------------------------------------------------- safety numbers
+    def _verify(self, scr, name: str) -> None:
+        """Show a contact's safety number, and mark them verified when the
+        user says it matches theirs. For a contact whose key changed, the
+        number is for the new key, and saying it matches moves them to it."""
+        try:
+            number, key, changed = self.s.safety_number(name)
+        except StoreError as exc:
+            self.status = f"error: {exc}"
+            return
+        groups = number.split()
+        rows = ["  " + " ".join(groups[i:i + 4]) for i in range(0, len(groups), 4)]
+        if changed:
+            title = f"{name}'s key changed"
+            lines = [
+                f"{name} has a new key; paf still uses the old one.",
+                "The safety number with the new key:",
+                "",
+            ] + rows + [
+                "",
+                f"Compare it with {name}'s, in person or by phone.",
+                "Accept the new key only if every digit matches.",
+            ]
+            question = f"accept {name}'s new key - do the numbers match? [y/N] "
+        else:
+            verified = self.s.is_verified(name)
+            title = f"safety number with {name}"
+            lines = rows + [
+                "",
+                f"{name} sees the same number for you. Compare",
+                "them in person or by phone: every digit.",
+                "",
+                "verified ✓" if verified else "not verified yet",
+            ]
+            question = None if verified else (
+                f"do the numbers match? mark {name} verified [y/N] "
+            )
+        self._popup(scr, title, lines, pick=False)
+        if question is None or not self._confirm(scr, question):
+            return
+        try:
+            moved = self.s.confirm_key(name, key)
+        except StoreError as exc:
+            self.status = f"error: {exc}"
+            return
+        self.status = (
+            f"{name}'s new key accepted - verified ✓, your key pushed to {name}"
+            if moved
+            else f"{name} verified ✓"
+        )
+
     # --------------------------------------------------------------- search
     def _search(self, scr, query: str) -> None:
         """Search every conversation, one at a time, with progress on the
@@ -1208,6 +1271,7 @@ class App:
             return target, [
                 ("Open", lambda: self._open_conv("dm", target)),
                 ("Unfriend", lambda: self._action_unfriend(scr, target)),
+                ("Verify (safety number)", lambda: self._verify(scr, target)),
                 ("Invite to a group", lambda: self._action_group_for(scr, target)),
             ]
         if kind == "grp":
@@ -1348,7 +1412,7 @@ class App:
 
     # ---------------------------------------------------------- / commands
     USAGE = (
-        "commands: /invite /unfriend /group /ginvite /gremove /leave "
+        "commands: /invite /unfriend /verify /group /ginvite /gremove /leave "
         "/rename /delete /presence /search /menu /help /quit"
     )
 
@@ -1371,6 +1435,14 @@ class App:
             self._create_group(arg)
         elif cmd == "/unfriend" and arg:
             self._unfriend(arg)
+        elif cmd == "/verify":
+            name = arg
+            if not name and self.active and self.active[0] == "dm":
+                name = self.active[1]  # the open chat
+            if name:
+                self._verify(scr, name)
+            else:
+                self.status = "open a chat first, or /verify USER"
         elif cmd == "/leave":
             gid = self._current_gid()
             if gid is None:
