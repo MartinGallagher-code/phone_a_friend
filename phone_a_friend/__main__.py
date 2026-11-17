@@ -14,7 +14,7 @@ import getpass
 import os
 import sys
 
-from . import __copyright__, __version__
+from . import __copyright__, __version__, crypto
 from .store import SharedDir, Session, StoreError
 
 VERSION_TEXT = f"""\
@@ -22,7 +22,21 @@ phone_a_friend (paf) {__version__}
 {__copyright__}
 License: GPL-3.0-or-later <https://www.gnu.org/licenses/gpl-3.0.html>
 This is free software: you are free to change and redistribute it.
-There is no warranty, to the extent permitted by law."""
+There is no warranty, to the extent permitted by law.
+Crypto: {{crypto}}"""
+
+FIPS_WARNING = (
+    "warning: {status}: phone_a_friend uses only FIPS-approved algorithms, "
+    "but this OpenSSL is not running as a FIPS-validated module "
+    "(set PAF_FIPS_WARNING=0 to silence)"
+)
+
+
+def fips_warning() -> None:
+    """Warn on stderr when OpenSSL is not in FIPS mode (never refuses)."""
+    if crypto.fips_enabled() or os.environ.get("PAF_FIPS_WARNING") == "0":
+        return
+    print(FIPS_WARNING.format(status=crypto.fips_status()), file=sys.stderr)
 
 
 def _shared_dir(args) -> SharedDir:
@@ -184,6 +198,19 @@ def cmd_read(args) -> None:
     s.mark_read(kind, target)
 
 
+def cmd_migrate(args) -> None:
+    s = _open_session_synced(args)
+    left = s.migrate()
+    if not left:
+        print("everything you can read is in the current format")
+        return
+    for label, count in left:
+        print(
+            f"{label}: {count} message(s) still in the 0.x format - "
+            "theirs, until they run phone_a_friend 1.0, or unreadable here"
+        )
+
+
 def cmd_status(args) -> None:
     s = _open_session_synced(args)
     print(f"user: {s.name}")
@@ -205,7 +232,11 @@ def main(argv=None) -> None:
         description="phone_a_friend - encrypted chat over a shared directory",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", action="version", version=VERSION_TEXT)
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=VERSION_TEXT.format(crypto=crypto.fips_status()),
+    )
     parser.add_argument("--dir", "-d", help="shared directory (or $PAF_DIR)")
     parser.add_argument("--user", "-u", help="username (or $PAF_USER)")
     parser.add_argument(
@@ -239,6 +270,9 @@ def main(argv=None) -> None:
     p.add_argument("--to", help="peer user")
     p.add_argument("--group", "-g", help="group")
     sub.add_parser("status", help="show contacts, groups and unread counts")
+    sub.add_parser(
+        "migrate", help="re-encrypt your 0.x messages with the FIPS algorithms"
+    )
 
     args = parser.parse_args(argv)
 
@@ -254,7 +288,9 @@ def main(argv=None) -> None:
         "send": cmd_send,
         "read": cmd_read,
         "status": cmd_status,
+        "migrate": cmd_migrate,
     }
+    fips_warning()
     try:
         handlers[args.command](args)
     except StoreError as exc:

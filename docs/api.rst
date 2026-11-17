@@ -14,6 +14,11 @@ phone_a_friend.crypto
 
 .. automodule:: phone_a_friend.crypto
 
+phone_a_friend.legacy
+---------------------
+
+.. automodule:: phone_a_friend.legacy
+
 phone_a_friend.store
 --------------------
 

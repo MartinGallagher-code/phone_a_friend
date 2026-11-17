@@ -177,7 +177,7 @@ class SessionEdgeTest(unittest.TestCase):
         wrong = crypto.public_key_bytes(crypto.generate_private_key())
         blob = crypto.seal(wrong, json.dumps({"type": "contact"}).encode())
         with open(os.path.join(inv_dir, "997-wrongkey.json"), "w") as fh:
-            json.dump({"sealed": crypto.b64e(blob)}, fh)
+            json.dump({"v": crypto.FORMAT, "sealed": crypto.b64e(blob)}, fh)
         self.assertEqual(b.list_invites(), [])
         a.invite_contact("bob")
         self.assertEqual(len(b.list_invites()), 1)
@@ -288,7 +288,7 @@ class SessionEdgeTest(unittest.TestCase):
         _, key, aad = a._conv("dm", "bob")
         blob = crypto.sym_encrypt(key, json.dumps(["not", "a", "dict"]).encode(), aad)
         with open(os.path.join(dm_dir, "113-shape2.json"), "w") as fh:
-            json.dump({"blob": crypto.b64e(blob)}, fh)
+            json.dump({"v": crypto.FORMAT, "blob": crypto.b64e(blob)}, fh)
         files = b.list_message_files("dm", "alice")
         msgs = b.load_messages("dm", "alice", files + ["999-missing.json"])
         self.assertEqual([m["text"] for m in msgs.values()], ["real"])
@@ -323,8 +323,8 @@ class CryptoEdgeTest(unittest.TestCase):
 
     def test_unseal_bad_ephemeral_key(self):
         priv = crypto.generate_private_key()
-        # an all-zero ephemeral public key is rejected by X25519
-        blob = b"\x00" * 32 + b"\x00" * 40
+        # an all-zero ephemeral public key is not a P-256 point
+        blob = b"\x00" * crypto.PUB_LEN + b"\x00" * 40
         with self.assertRaises(crypto.DecryptError):
             crypto.unseal(priv, blob)
 

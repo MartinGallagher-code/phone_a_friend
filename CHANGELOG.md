@@ -11,6 +11,52 @@ stops working the way it did. `CLAUDE.md` has the rest.
 Sections 0.1.0 to 0.1.3 were written afterwards, from the git history, and
 are dated by their uploads to PyPI. Numbers in brackets are pull requests.
 
+## 1.0.0 — 2026-11-17
+
+phone_a_friend now uses only FIPS-approved cryptography (PAF-003). This is
+1.0.0 because the shared directory's formats changed: a 0.x client cannot
+read what 1.0 writes. 1.0 reads everything 0.x wrote and migrates it, so
+upgrade everyone who shares a directory.
+
+### Changed
+
+- **FIPS-approved primitives only.** Identity keys, DM key agreement and
+  sealed invites are ECDH on NIST P-256 (was X25519); messages, invites and
+  the config are AES-256-GCM with a 96-bit random nonce (was
+  ChaCha20-Poly1305); the passphrase key is PBKDF2-HMAC-SHA256 with 600,000
+  iterations (was scrypt N=2^14); HKDF-SHA256 stays. Group messages use a
+  key derived from the group key rather than the group key itself.
+- **Every encrypted record names its format**: `"v": 2` in `config.enc`,
+  invites, replies, messages and `identity.json`, and `config.enc` records
+  its KDF, iteration count and AEAD. A record of an unknown format is
+  skipped, and such a `config.enc` refused, never misread.
+- **0.x data is migrated, not dropped.** The first 1.0 login moves an
+  account to a new P-256 identity, keeping its X25519 key only to read old
+  messages; `identity.json` publishes the new key beside the old one, and a
+  contact's client takes it up only when the old key matches the one it
+  holds. Each client re-encrypts its own 0.x messages once the conversation
+  has a new key. Until a contact upgrades, their messages read but nothing
+  can be sent to them. The 0.x algorithms are in `phone_a_friend/legacy.py`,
+  read-only, imported only when 0.x data is met.
+
+### Added
+
+- **FIPS mode is reported.** `paf --version` ends with the OpenSSL in use
+  and whether it is in FIPS mode. When it is not, each command warns once on
+  stderr and runs, and the TUI says so on its status line;
+  `PAF_FIPS_WARNING=0` silences it.
+- **`paf migrate`** re-encrypts every 0.x message of yours that can be, and
+  lists what is still in the 0.x format.
+- **CI's fips job** runs the suite on Rocky Linux 9's own
+  `python3-cryptography` with OpenSSL in FIPS mode, plus the two-user smoke
+  test. Known-answer tests for AES-256-GCM, PBKDF2-HMAC-SHA256 and
+  HKDF-SHA256, a check that nothing but `legacy.py` imports X25519,
+  ChaCha20-Poly1305 or scrypt, and migration tests against a directory
+  written the way 0.3.0 wrote it.
+- **Docs**: `docs/security.rst` lists the primitives and their standards,
+  the FIPS boundary and how migration works; `docs/installation.rst` says how
+  to run on a FIPS host.
+
 ## 0.3.0 — 2026-11-17
 
 The key bar along the bottom is gone, and the key reference is on screen

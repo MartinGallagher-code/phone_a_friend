@@ -78,6 +78,7 @@ import time
 import unicodedata
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
+from . import crypto
 from .store import Session, StoreError
 
 #: A key as :meth:`App._read_key` gives it: a ``str`` for text, an ``int``
@@ -285,6 +286,11 @@ class App:
         self.cursor = 0  # position in self.input
         self.hscroll = 0  # first character of self.input on screen
         self.status = f"logged in as {session.name} - {HELP}"
+        if not crypto.fips_enabled():
+            self.status = (
+                f"logged in as {session.name} - OpenSSL is not in FIPS mode"
+                f" - {HELP}"
+            )
         self.scroll = 0  # lines scrolled up from the bottom
         self.welcome_top = 0  # first line of the key reference on screen
         self.invites: List[Tuple[str, dict]] = []
