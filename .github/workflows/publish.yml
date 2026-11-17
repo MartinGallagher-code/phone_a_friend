@@ -47,6 +47,12 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # A version already on PyPI is skipped, not an error: a tag, a
+          # release and a manual run each start this workflow, so a release
+          # made after a version was uploaded (to attach paf.pyz) would
+          # otherwise fail here with "400 File already exists".
+          skip-existing: true
 
   pyz:
     # Attach the single-file build to each GitHub release.

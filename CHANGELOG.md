@@ -11,6 +11,20 @@ stops working the way it did. `CLAUDE.md` has the rest.
 Sections 0.1.0 to 0.1.3 were written afterwards, from the git history, and
 are dated by their uploads to PyPI. Numbers in brackets are pull requests.
 
+## 2.1.1 — 2026-11-17
+
+The publish workflow skips what is already on PyPI (PAF-011).
+
+### Changed
+
+- **`publish.yml` passes `skip-existing: true` to the PyPI upload.** It runs
+  on a pushed `v*` tag, a published GitHub release and a manual run, so two
+  of them for one version, or a release made after its version was
+  uploaded by hand, no longer fail with "400 File already exists": the
+  upload is skipped and the release still gets `paf.pyz`. A run uses the
+  workflow as it is at the commit it builds, so this holds from 2.1.1 on.
+  Nothing a user installs changes.
+
 ## 2.1.0 — 2026-11-17
 
 Invites and replies are checked before they are acted on, so no one on the
