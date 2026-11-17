@@ -12,7 +12,7 @@ shared directory. Layout::
       invites/<name>/<id>.json       sealed invites pushed TO <name>
       replies/<name>/<id>.json       sealed invite replies pushed TO <name>
       dm/<a>__<b>/<ts>-<rand>.json   direct messages (pair-key encrypted)
-      groups/<gid>/meta.json         public group metadata
+      groups/<gid>/meta.json         group metadata (name encrypted)
       groups/<gid>/msgs/<...>.json   group messages (group-key encrypted)
 
 Access control = filesystem permissions on the shared directory plus
@@ -32,6 +32,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -50,6 +51,10 @@ PRIVATE_FILE_MODE = 0o600
 
 # 0.x identity keys were raw X25519 public keys, 32 bytes long.
 LEGACY_PUB_LEN = 32
+
+#: How long a deleted group stays readable before clients remove it.
+GROUP_GRACE_DAYS = 3
+GROUP_GRACE = GROUP_GRACE_DAYS * 24 * 3600
 
 
 class StoreError(Exception):
@@ -704,23 +709,155 @@ class Session:
         key = crypto.new_symmetric_key()
         _make_dir(self.shared.group_dir(gid), USER_DIR_MODE)
         _make_dir(self.shared.group_msgs_dir(gid), DROP_DIR_MODE)
-        meta = {
-            "id": gid,
+        self.config["groups"][gid] = {
             "name": group_name.strip(),
-            "owner": self.name,
-            "created": time.time(),
+            "key": crypto.b64e(key),
         }
+        self._write_group_meta(
+            gid, {"id": gid, "owner": self.name, "created": time.time()},
+            group_name.strip(),
+        )
+        self.save_config()
+        return gid
+
+    # meta.json: the group's owner, when it was made, and (once deleted) when
+    # it was deleted, in the clear; its name encrypted with a key derived from
+    # the group key, so a listing of the shared directory does not show it.
+    def _group_meta_key(self, gid: str) -> bytes:
+        return crypto.hkdf(self._group_key(gid), b"paf-grp-meta-v2|" + gid.encode())
+
+    def _write_group_meta(self, gid: str, meta: dict, name: str) -> None:
+        meta = {k: v for k, v in meta.items() if k != "name"}
+        meta["v"] = crypto.FORMAT
+        meta["name_blob"] = crypto.b64e(
+            crypto.sym_encrypt(
+                self._group_meta_key(gid), name.encode(), b"paf-grp-meta|" + gid.encode()
+            )
+        )
         _atomic_write(
             os.path.join(self.shared.group_dir(gid), "meta.json"),
             json.dumps(meta, indent=2).encode(),
             PUBLIC_FILE_MODE,
         )
-        self.config["groups"][gid] = {
-            "name": group_name.strip(),
-            "key": crypto.b64e(key),
-        }
+
+    def group_meta(self, gid: str) -> Optional[dict]:
+        """The group's meta.json with its name decrypted into ``"name"``,
+        or None when the group is gone or its meta cannot be read. A meta
+        written before names were encrypted has its name in the clear."""
+        try:
+            meta = self.shared.read_group_meta(gid)
+        except StoreError:
+            return None
+        if not isinstance(meta, dict):
+            return None
+        if "name_blob" in meta:
+            try:
+                meta["name"] = crypto.sym_decrypt(
+                    self._group_meta_key(gid),
+                    crypto.b64d(meta["name_blob"]),
+                    b"paf-grp-meta|" + gid.encode(),
+                ).decode()
+            except (
+                StoreError, ValueError, TypeError, AttributeError,
+                crypto.DecryptError,
+            ):
+                return None
+        if not isinstance(meta.get("name"), str):
+            return None
+        return meta
+
+    def _owned_meta(self, gid: str, verb: str) -> dict:
+        if gid not in self.config["groups"]:
+            raise StoreError("you are not a member of that group")
+        meta = self.group_meta(gid)
+        if meta is None:
+            raise StoreError("that group's metadata cannot be read")
+        if meta.get("owner") != self.name:
+            raise StoreError(
+                f"only the group's owner, {meta.get('owner', '?')}, can {verb} it"
+            )
+        if meta.get("deleted_at") is not None:
+            raise StoreError("that group has been deleted")
+        return meta
+
+    def rename_group(self, gid: str, new_name: str) -> None:
+        """Rename a group (its owner only); members see it on their next poll."""
+        new_name = new_name.strip()
+        if not new_name:
+            raise StoreError("group name must not be empty")
+        meta = self._owned_meta(gid, "rename")
+        self._write_group_meta(gid, meta, new_name)
+        self.config["groups"][gid]["name"] = new_name
         self.save_config()
-        return gid
+
+    def delete_group(self, gid: str) -> float:
+        """Delete a group (its owner only). It stays readable, and read-only,
+        for GROUP_GRACE; returns the time after which it is removed."""
+        meta = self._owned_meta(gid, "delete")
+        meta["deleted_at"] = time.time()
+        self._write_group_meta(gid, meta, meta["name"])
+        self.config["groups"][gid]["deleted_at"] = meta["deleted_at"]
+        self.save_config()
+        return meta["deleted_at"] + GROUP_GRACE
+
+    def group_deleted_until(self, gid: str) -> Optional[float]:
+        """When a deleted group goes away, or None if it is not deleted."""
+        deleted = self.config["groups"].get(gid, {}).get("deleted_at")
+        return None if deleted is None else deleted + GROUP_GRACE
+
+    def sync_groups(self) -> List[str]:
+        """Bring every group up to date with its meta.json: renames,
+        deletions, and removal once a deleted group's grace period is over.
+        Returns notices for the user."""
+        notices = []
+        changed = False
+        now = time.time()
+        for gid in list(self.config["groups"]):
+            group = self.config["groups"][gid]
+            meta = self.group_meta(gid)
+            if meta is None:
+                if not os.path.isdir(self.shared.group_dir(gid)):
+                    del self.config["groups"][gid]
+                    notices.append(f"group #{group['name']} is gone")
+                    changed = True
+                continue
+            if meta["name"] != group["name"]:
+                notices.append(f"#{group['name']} is now #{meta['name']}")
+                group["name"] = meta["name"]
+                changed = True
+            if "name_blob" not in meta and meta.get("owner") == self.name:
+                self._write_group_meta(gid, meta, meta["name"])  # encrypt it
+            deleted = meta.get("deleted_at")
+            if isinstance(deleted, (int, float)) and group.get("deleted_at") != deleted:
+                group["deleted_at"] = deleted
+                notices.append(
+                    f"#{group['name']} was deleted - readable until "
+                    + time.strftime("%Y-%m-%d %H:%M", time.localtime(deleted + GROUP_GRACE))
+                )
+                changed = True
+            if isinstance(deleted, (int, float)) and now >= deleted + GROUP_GRACE:
+                del self.config["groups"][gid]
+                self.cleanup_group(gid)
+                notices.append(f"deleted group #{group['name']} removed")
+                changed = True
+        if changed:
+            self.save_config()
+        return notices
+
+    def cleanup_group(self, gid: str) -> bool:
+        """Remove a group's directory: rename it aside, so a client in the
+        middle of reading sees it gone at once, then delete it. Two clients
+        doing this at once are harmless: one rename wins, and the other
+        finds nothing to do. Returns True if this client removed it."""
+        aside = os.path.join(
+            self.shared.root, "groups", f".deleted-{gid}-{secrets.token_hex(4)}"
+        )
+        try:
+            os.rename(self.shared.group_dir(gid), aside)
+        except OSError:
+            return False  # gone already, or not ours to move
+        shutil.rmtree(aside, ignore_errors=True)
+        return True
 
     def group_by_name(self, name: str) -> Optional[str]:
         for gid, g in self.config["groups"].items():
@@ -780,6 +917,8 @@ class Session:
 
     def send_message(self, kind: str, target: str, text: str) -> dict:
         directory, key, aad = self._conv(kind, target)
+        if kind == "grp" and self.group_deleted_until(target) is not None:
+            raise StoreError("that group has been deleted - it is read-only")
         _make_dir(directory, DROP_DIR_MODE)
         msg = {"from": self.name, "ts": time.time(), "text": text}
         blob = crypto.sym_encrypt(key, json.dumps(msg).encode(), aad)

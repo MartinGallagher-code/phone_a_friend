@@ -42,6 +42,11 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
 * **Create groups and invite people** — each group has a random symmetric
   key; inviting someone pushes the group key to them (sealed to their public
   key). Any member can invite others.
+* **Rename and delete groups** — the group's owner (whoever created it) can
+  rename it (`/rename NAME`) or delete it (`/delete`). A deleted group stays
+  readable, read-only, for 3 days, marked "(deleted)", and then the next
+  client to run removes it. Group names are encrypted, so a listing of the
+  shared directory does not show them.
 * **Unfriend and remove** — stop chatting with a contact (`/unfriend`); a
   future invite rebuilds the friendship and the previous chat becomes
   readable again. Any group member can remove another member (`/gremove`),
@@ -221,6 +226,8 @@ Ctrl-N/Ctrl-G/Ctrl-O itself):
 /ginvite USER    invite a user to the open (or selected) group
 /gremove USER    remove a user from the open (or selected) group
 /leave           leave the open (or selected) group
+/rename NAME     rename the open group (its owner only)
+/delete          delete the open group for everyone (its owner only)
 /menu            the selected item's menu
 /help            the key reference, over an open conversation
 /quit            exit
@@ -244,6 +251,8 @@ paf -d /srv/paf -u alice send --group "book club" "welcome"
 paf -d /srv/paf -u alice remove bob            # unfriend
 paf -d /srv/paf -u alice remove bob --group "book club"
 paf -d /srv/paf -u alice remove alice --group "book club"   # leave
+paf -d /srv/paf -u alice rename-group "book club" "reading group"
+paf -d /srv/paf -u alice delete-group "reading group"
 paf -d /srv/paf -u bob   status                # contacts, groups, unread
 ```
 

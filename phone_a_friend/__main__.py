@@ -13,6 +13,7 @@ import argparse
 import getpass
 import os
 import sys
+import time
 
 from . import __copyright__, __version__, crypto
 from .store import SharedDir, Session, StoreError
@@ -82,7 +83,7 @@ def _open_session_synced(args) -> Session:
     """Open a session and consume pending invite replies first, so that
     freshly accepted invites are usable immediately."""
     session = _open_session(args)
-    for notice in session.process_replies():
+    for notice in session.process_replies() + session.sync_groups():
         print(f"* {notice}")
     return session
 
@@ -162,6 +163,26 @@ def cmd_create_group(args) -> None:
     s = _open_session_synced(args)
     gid = s.create_group(args.name)
     print(f"created group '{args.name}' ({gid})")
+
+
+def _group_arg(s: Session, name: str) -> str:
+    gid = s.group_by_name(name)
+    if gid is None:
+        raise StoreError(f"unknown group: {name}")
+    return gid
+
+
+def cmd_rename_group(args) -> None:
+    s = _open_session_synced(args)
+    s.rename_group(_group_arg(s, args.group), args.name)
+    print(f"renamed '{args.group}' to '{args.name.strip()}'")
+
+
+def cmd_delete_group(args) -> None:
+    s = _open_session_synced(args)
+    until = s.delete_group(_group_arg(s, args.group))
+    when = time.strftime("%Y-%m-%d %H:%M", time.localtime(until))
+    print(f"deleted '{args.group}' - readable until {when}")
 
 
 def cmd_send(args) -> None:
@@ -262,6 +283,14 @@ def main(argv=None) -> None:
     p.add_argument("--from", dest="sender", help="only invites from this user")
     p = sub.add_parser("create-group", help="create a group")
     p.add_argument("name")
+    p = sub.add_parser("rename-group", help="rename a group you own")
+    p.add_argument("group")
+    p.add_argument("name")
+    p = sub.add_parser(
+        "delete-group",
+        help="delete a group you own (readable for a few days, then removed)",
+    )
+    p.add_argument("group")
     p = sub.add_parser("send", help="send a message")
     p.add_argument("--to", help="recipient user")
     p.add_argument("--group", "-g", help="recipient group")
@@ -285,6 +314,8 @@ def main(argv=None) -> None:
         "invites": cmd_invites,
         "accept": cmd_accept,
         "create-group": cmd_create_group,
+        "rename-group": cmd_rename_group,
+        "delete-group": cmd_delete_group,
         "send": cmd_send,
         "read": cmd_read,
         "status": cmd_status,

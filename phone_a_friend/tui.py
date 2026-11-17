@@ -79,7 +79,7 @@ import unicodedata
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from . import crypto
-from .store import Session, StoreError
+from .store import GROUP_GRACE_DAYS, Session, StoreError
 
 #: A key as :meth:`App._read_key` gives it: a ``str`` for text, an ``int``
 #: for anything else (curses' ``KEY_*`` codes, and control keys such as
@@ -157,6 +157,8 @@ KEY_REFERENCE = [
     "  /ginvite USER  invite a user to the open group",
     "  /gremove USER  remove a user from the open group",
     "  /leave         leave the open group",
+    "  /rename NAME   rename the open group (its owner)",
+    "  /delete        delete the open group (its owner)",
     "  /menu          the selected item's menu",
     "  /help          this list, over a conversation",
     "  /quit          quit",
@@ -360,7 +362,7 @@ class App:
     def _poll(self) -> None:
         try:
             self.invites = self.s.list_invites()
-            for notice in self.s.process_replies():
+            for notice in self.s.process_replies() + self.s.sync_groups():
                 self.status = notice
         except (StoreError, OSError):
             pass
@@ -525,6 +527,9 @@ class App:
         else:  # "grp"
             g = self.s.config["groups"][data]
             label = f"  #{g['name']}"
+            if self.s.group_deleted_until(str(data)) is not None:
+                label += " (deleted)"
+                attr = curses.color_pair(CP_DIM)
             label += self._badge(f"grp:{data}")
         if "●" in label and kind in ("dm", "grp"):
             attr |= curses.color_pair(CP_UNREAD) | curses.A_BOLD
@@ -543,7 +548,13 @@ class App:
         if kind == "dm":
             return f"chat with {target}"
         g = self.s.config["groups"].get(target)
-        return f"#{g['name']}" if g else "?"
+        if not g:
+            return "?"
+        until = self.s.group_deleted_until(target)
+        if until is None:
+            return f"#{g['name']}"
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(until))
+        return f"#{g['name']} - deleted, readable until {when}"
 
     def _draw_conversation(self, scr, rows: int, cols: int, leftw: int) -> None:
         x0 = leftw + 2
@@ -973,6 +984,39 @@ class App:
         if self._confirm(scr, f"leave #{gname}? [y/N] "):
             self._remove_from_group(gid, self.s.name)
 
+    def _rename_group(self, gid: str, name: str) -> None:
+        old = self.s.config["groups"][gid]["name"]
+        try:
+            self.s.rename_group(gid, name)
+        except StoreError as exc:
+            self.status = f"error: {exc}"
+            return
+        self.status = f"#{old} is now #{name.strip()}"
+
+    def _delete_group(self, gid: str) -> None:
+        gname = self.s.config["groups"][gid]["name"]
+        try:
+            until = self.s.delete_group(gid)
+        except StoreError as exc:
+            self.status = f"error: {exc}"
+            return
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(until))
+        self.status = f"deleted #{gname} - readable until {when}"
+
+    def _action_rename(self, scr, gid: str) -> None:
+        gname = self.s.config["groups"][gid]["name"]
+        name = self._prompt(scr, f"new name for #{gname}: ")
+        if name and name.strip():
+            self._rename_group(gid, name)
+
+    def _action_delete(self, scr, gid: str) -> None:
+        gname = self.s.config["groups"][gid]["name"]
+        days = GROUP_GRACE_DAYS
+        if self._confirm(
+            scr, f"delete #{gname} for everyone (readable {days} more days)? [y/N] "
+        ):
+            self._delete_group(gid)
+
     def _action_group_for(self, scr, name: str) -> None:
         """Invite a contact to a group chosen from a menu of your groups."""
         groups = sorted(
@@ -1012,6 +1056,8 @@ class App:
                 ("Invite a user", lambda: self._action_invite_group(scr, target)),
                 ("Remove a member", lambda: self._action_remove_member(scr, target)),
                 ("Leave", lambda: self._action_leave(scr, target)),
+                ("Rename (owner)", lambda: self._action_rename(scr, target)),
+                ("Delete (owner)", lambda: self._action_delete(scr, target)),
             ]
         # "usr"
         return target, [
@@ -1143,7 +1189,7 @@ class App:
     # ---------------------------------------------------------- / commands
     USAGE = (
         "commands: /invite /unfriend /group /ginvite /gremove /leave "
-        "/menu /help /quit"
+        "/rename /delete /menu /help /quit"
     )
 
     def _run_command(self, scr, text: str) -> bool:
@@ -1171,6 +1217,14 @@ class App:
                 self.status = "open a group first, then /leave"
             else:
                 self._remove_from_group(gid, self.s.name)
+        elif cmd == "/rename" and arg or cmd == "/delete":
+            gid = self._current_gid()
+            if gid is None:
+                self.status = f"open a group first, then {cmd}"
+            elif cmd == "/rename":
+                self._rename_group(gid, arg)
+            else:
+                self._action_delete(scr, gid)
         elif cmd in ("/ginvite", "/gremove") and arg:
             gid = self._current_gid()
             if gid is None:

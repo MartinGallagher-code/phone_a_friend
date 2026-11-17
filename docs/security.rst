@@ -24,7 +24,8 @@ Out of scope for v1
 * Forward secrecy / key rotation.
 * Sender authentication beyond conversation-key possession.
 * Traffic analysis (filenames reveal timing; directory names reveal who
-  talks to whom).
+  talks to whom). Group names are encrypted in ``meta.json``, but its owner
+  and the number and timing of a group's messages are visible.
 * Revoking group keys.
 
 Cryptographic primitives
