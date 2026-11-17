@@ -11,6 +11,32 @@ stops working the way it did. `CLAUDE.md` has the rest.
 Sections 0.1.0 to 0.1.3 were written afterwards, from the git history, and
 are dated by their uploads to PyPI. Numbers in brackets are pull requests.
 
+## 1.3.0 — 2026-11-17
+
+Presence, typing indicators and read receipts (PAF-005), on by default.
+
+### Added
+
+- **Presence.** Contacts who are active are marked `•` in the left pane,
+  idle ones `◦`, and an open chat's title says "(active)", "(idle)" or
+  "(away)".
+- **Typing.** "bob is typing..." under the conversation while someone in it
+  types; it lapses 8 seconds after they stop.
+- **Read receipts.** "✓ read by bob, carol" under your newest message, in
+  chats and groups.
+- **One beacon file per user and device**, `beacons/<name>.<device>.json`:
+  presence is its age, and inside it each conversation's read marker and
+  typing time are encrypted with keys derived from that conversation's key,
+  under tags only its members can recognise. Clients write it at most every
+  15 seconds while active (sooner on a change, every 5 s while typing,
+  never after 5 idle minutes) and read everyone's with one directory listing
+  per poll, opening only files whose modification time moved.
+- **`/presence on|off`** and **`paf presence [on|off]`**. Off stops writing
+  the beacon and deletes yours; `paf presence` lists your contacts' presence.
+- Docs: what an outsider can still see (that a user is active, and when), in
+  `docs/security.rst`; the beacon format, write throttling and the NFS
+  attribute-caching caveat in `docs/storage.rst`.
+
 ## 1.2.0 — 2026-11-17
 
 Groups can be renamed and deleted, and their names are no longer in the

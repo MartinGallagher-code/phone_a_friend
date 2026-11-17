@@ -14,6 +14,7 @@ shared directory. Layout::
       dm/<a>__<b>/<ts>-<rand>.json   direct messages (pair-key encrypted)
       groups/<gid>/meta.json         group metadata (name encrypted)
       groups/<gid>/msgs/<...>.json   group messages (group-key encrypted)
+      beacons/<name>.<device>.json   presence, typing and read receipts
 
 Access control = filesystem permissions on the shared directory plus
 encryption: a message can only be decrypted by holders of the right keys.
@@ -28,9 +29,11 @@ know is never guessed at: it is skipped, or refused for ``config.enc``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import socket
 import secrets
 import shutil
 import time
@@ -51,6 +54,12 @@ PRIVATE_FILE_MODE = 0o600
 
 # 0.x identity keys were raw X25519 public keys, 32 bytes long.
 LEGACY_PUB_LEN = 32
+
+#: Presence, from the age of a user's newest beacon file (PAF-005).
+PRESENCE_ACTIVE = 60          # seconds: "active"
+PRESENCE_IDLE = 15 * 60       # seconds: "idle"; older than this is "away"
+#: How long a typing indicator lasts without being refreshed.
+TYPING_TTL = 8
 
 #: How long a deleted group stays readable before clients remove it.
 GROUP_GRACE_DAYS = 3
@@ -144,6 +153,9 @@ class SharedDir:
 
     def group_msgs_dir(self, gid: str) -> str:
         return os.path.join(self.group_dir(gid), "msgs")
+
+    def beacons_dir(self) -> str:
+        return os.path.join(self.root, "beacons")
 
     # -- public reads --------------------------------------------------------
     def ensure_root(self) -> None:
@@ -1022,6 +1034,164 @@ class Session:
             if remaining:
                 left.append((label, remaining))
         return left
+
+    # -------------------------------------------------------------- beacons
+    # One small file per user and device, beacons/<name>.<device>.json. Its
+    # mtime is the user's presence. Inside, one entry per conversation,
+    # encrypted with a key derived from that conversation's key and filed
+    # under a tag derived from it too, so only people in the conversation
+    # can tell which conversation an entry is for or read it: the user's
+    # read marker there, and when they last typed in it.
+
+    @property
+    def device(self) -> str:
+        """This machine, as an opaque 8-character id (not its hostname)."""
+        return hashlib.sha256(socket.gethostname().encode()).hexdigest()[:8]
+
+    @property
+    def shares_presence(self) -> bool:
+        return self.config.get("share_presence", True)
+
+    def set_share_presence(self, on: bool) -> None:
+        """Turn beacons on or off. Off removes this user's beacon files."""
+        self.config["share_presence"] = bool(on)
+        self.save_config()
+        if not on:
+            prefix = self.name + "."
+            try:
+                names = os.listdir(self.shared.beacons_dir())
+            except FileNotFoundError:
+                names = []
+            for fname in names:
+                if fname.startswith(prefix) and fname.endswith(".json"):
+                    self._discard(os.path.join(self.shared.beacons_dir(), fname))
+
+    def _beacon_keys(self, kind: str, target: str, user: str) -> Tuple[str, bytes]:
+        """(tag, key) of ``user``'s beacon entry for a conversation."""
+        root = self._conv(kind, target)[1]
+        tag = crypto.hkdf(root, b"paf-beacon-tag-v2|" + user.encode())[:16].hex()
+        key = crypto.hkdf(root, b"paf-beacon-v2|" + user.encode())
+        return tag, key
+
+    def _beacon_convs(self) -> List[Tuple[str, str]]:
+        return [("dm", c) for c in sorted(self.config["contacts"])] + [
+            ("grp", g) for g in sorted(self.config["groups"])
+        ]
+
+    def write_beacon(
+        self, typing: Optional[Tuple[str, str]] = None, now: Optional[float] = None
+    ) -> bool:
+        """Write this device's beacon; False (writing nothing) when presence
+        sharing is off. ``typing`` is the conversation being typed in."""
+        if not self.shares_presence:
+            return False
+        now = time.time() if now is None else now
+        entries = {}
+        for kind, target in self._beacon_convs():
+            try:
+                tag, key = self._beacon_keys(kind, target, self.name)
+            except StoreError:
+                continue  # e.g. a contact still on 0.x
+            state = {
+                "read": self.config["last_read"].get(self.conv_key(kind, target), 0.0)
+            }
+            if typing == (kind, target):
+                state["typing_at"] = now
+            entries[tag] = crypto.b64e(
+                crypto.sym_encrypt(
+                    key, json.dumps(state).encode(), b"paf-beacon|" + tag.encode()
+                )
+            )
+        _make_dir(self.shared.beacons_dir(), DROP_DIR_MODE)
+        body = {"v": crypto.FORMAT, "entries": entries}
+        _atomic_write(
+            os.path.join(self.shared.beacons_dir(), f"{self.name}.{self.device}.json"),
+            json.dumps(body).encode(),
+            PUBLIC_FILE_MODE,
+        )
+        return True
+
+    def read_beacons(self, cache: Dict[str, Tuple[float, dict]]) -> Dict[str, dict]:
+        """Everyone else's beacons, as {user: {"mtime": newest, "convs":
+        {conv_key: {"read": t, "typing_at": t}}}}.
+
+        One listdir and a stat per file; a file is read only when its mtime
+        differs from the one in ``cache`` (which this updates), so a tick in
+        which nothing changed reads nothing."""
+        directory = self.shared.beacons_dir()
+        try:
+            names = os.listdir(directory)
+        except FileNotFoundError:
+            names = []
+        seen = set()
+        for fname in names:
+            parts = fname.rsplit(".", 2)
+            if len(parts) != 3 or parts[2] != "json" or parts[0] == self.name:
+                continue
+            path = os.path.join(directory, fname)
+            try:
+                mtime = os.stat(path).st_mtime
+            except OSError:
+                continue
+            seen.add(fname)
+            if fname in cache and cache[fname][0] == mtime:
+                continue
+            cache[fname] = (mtime, self._decode_beacon(parts[0], path))
+        for fname in set(cache) - seen:
+            del cache[fname]
+        out: Dict[str, dict] = {}
+        for fname, (mtime, convs) in cache.items():
+            user = fname.rsplit(".", 2)[0]
+            entry = out.setdefault(user, {"mtime": 0.0, "convs": {}})
+            entry["mtime"] = max(entry["mtime"], mtime)
+            for conv, state in convs.items():
+                merged = entry["convs"].setdefault(conv, {})
+                for field in ("read", "typing_at"):
+                    if field in state:
+                        merged[field] = max(merged.get(field, 0.0), state[field])
+        return out
+
+    def _decode_beacon(self, user: str, path: str) -> dict:
+        try:
+            with open(path, "rb") as fh:
+                body = json.loads(fh.read())
+            if body.get("v") != crypto.FORMAT:
+                return {}
+            entries = body["entries"]
+        except (OSError, ValueError, KeyError, AttributeError):
+            return {}
+        convs = {}
+        for kind, target in self._beacon_convs():
+            if kind == "dm" and target != user:
+                continue
+            try:
+                tag, key = self._beacon_keys(kind, target, user)
+                if tag not in entries:
+                    continue
+                state = json.loads(
+                    crypto.sym_decrypt(
+                        key, crypto.b64d(entries[tag]), b"paf-beacon|" + tag.encode()
+                    )
+                )
+                convs[self.conv_key(kind, target)] = {
+                    k: float(state[k]) for k in ("read", "typing_at") if k in state
+                }
+            except (StoreError, ValueError, TypeError, AttributeError,
+                    crypto.DecryptError):
+                continue
+        return convs
+
+    @staticmethod
+    def presence(beacon: Optional[dict], now: Optional[float] = None) -> str:
+        """"active", "idle" or "away" from a read_beacons() entry."""
+        if not beacon:
+            return "away"
+        age = (time.time() if now is None else now) - beacon["mtime"]
+        if age < PRESENCE_ACTIVE:
+            return "active"
+        if age < PRESENCE_IDLE:
+            return "idle"
+        return "away"
 
     # ----------------------------------------------------------- read state
     @staticmethod

@@ -232,6 +232,17 @@ def cmd_migrate(args) -> None:
         )
 
 
+def cmd_presence(args) -> None:
+    s = _open_session_synced(args)
+    if args.state is not None:
+        s.set_share_presence(args.state == "on")
+        s.write_beacon()
+    print(f"sharing presence: {'on' if s.shares_presence else 'off'}")
+    beacons = s.read_beacons({})
+    for c in sorted(s.config["contacts"]):
+        print(f"  {c}: {Session.presence(beacons.get(c))}")
+
+
 def cmd_status(args) -> None:
     s = _open_session_synced(args)
     print(f"user: {s.name}")
@@ -299,6 +310,11 @@ def main(argv=None) -> None:
     p.add_argument("--to", help="peer user")
     p.add_argument("--group", "-g", help="group")
     sub.add_parser("status", help="show contacts, groups and unread counts")
+    p = sub.add_parser(
+        "presence",
+        help="show contacts' presence; on/off: share yours (default on)",
+    )
+    p.add_argument("state", nargs="?", choices=["on", "off"])
     sub.add_parser(
         "migrate", help="re-encrypt your 0.x messages with the FIPS algorithms"
     )
@@ -320,6 +336,7 @@ def main(argv=None) -> None:
         "read": cmd_read,
         "status": cmd_status,
         "migrate": cmd_migrate,
+        "presence": cmd_presence,
     }
     fips_warning()
     try:

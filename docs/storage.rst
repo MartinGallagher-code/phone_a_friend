@@ -17,6 +17,7 @@ database and no server process. The layout:
      dm/<a>__<b>/<ts>-<rand>.json   direct messages, pair-key encrypted
      groups/<gid>/meta.json         group metadata, name encrypted
      groups/<gid>/msgs/<...>.json   group messages, group-key encrypted
+     beacons/<name>.<device>.json   presence, typing and read receipts
 
 Every encrypted file (``config.enc``, invites, replies, messages) is a JSON
 object with a ``"v"`` field naming its format, currently ``2``, and its
@@ -46,6 +47,25 @@ drop directories, only the group's owner can remove other people's message
 files, so where ``groups/`` is not writable by everyone the directory goes
 when the owner's client next runs; every member's client stops showing it
 either way.
+
+**Beacons** (PAF-005). Each client keeps one file,
+``beacons/<name>.<device>.json``, where ``<device>`` is eight hex characters
+of a hash of the host name (not the name itself). Its modification time is
+the user's presence: written in the last minute is *active*, in the last 15
+minutes *idle*, otherwise *away*. Inside, one entry per conversation, filed
+under a tag derived from that conversation's key and encrypted under another
+key derived from it: the user's read marker there, and when they last typed
+in it. The TUI rewrites it at most every 15 seconds while you are active,
+sooner (but not within 2 seconds) when what it says changes, every 5 seconds
+while you type, and not at all once you have done nothing for 5 minutes. To
+read everyone's, each poll does one directory listing of ``beacons/`` and a
+``stat`` per file, and opens a file only when its modification time moved.
+A typing indicator lapses after 8 seconds without a refresh.
+
+**On NFS**, attribute caching (``acregmin``/``acdirmin``, 3 to 60 seconds by
+default) delays what other clients see, so presence is coarse and a typing
+indicator can arrive late or not at all. Read receipts are not affected
+beyond that delay.
 
 Drop-box directories (``invites/<name>/``, ``replies/<name>/``) are created
 with the sticky bit so users cannot delete each other's files.

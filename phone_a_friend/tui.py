@@ -79,7 +79,7 @@ import unicodedata
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from . import crypto
-from .store import GROUP_GRACE_DAYS, Session, StoreError
+from .store import GROUP_GRACE_DAYS, TYPING_TTL, Session, StoreError, _ts_of
 
 #: A key as :meth:`App._read_key` gives it: a ``str`` for text, an ``int``
 #: for anything else (curses' ``KEY_*`` codes, and control keys such as
@@ -87,6 +87,17 @@ from .store import GROUP_GRACE_DAYS, Session, StoreError
 Key = Union[int, str]
 
 POLL_MS = 400
+
+#: Beacons (PAF-005): rewrite at most every BEACON_EVERY seconds while the
+#: user is active, sooner (but not more often than BEACON_MIN) when what it
+#: says changes, refresh a typing indicator every TYPING_REFRESH seconds, and
+#: write nothing once the user has done nothing for IDLE_AFTER seconds, so
+#: that the beacon's age shows them idle, then away.
+BEACON_EVERY = 15
+BEACON_MIN = 2
+TYPING_REFRESH = 5
+IDLE_AFTER = 300
+PRESENCE_MARK = {"active": "•", "idle": "◦", "away": " "}
 #: How long curses waits after Esc for the rest of a key's sequence. Its
 #: default is a whole second, which made Esc lag; a terminal sends a key's
 #: sequence in one write, so 25 ms is ample. An ESCDELAY set in the
@@ -158,6 +169,8 @@ KEY_REFERENCE = [
     "  /gremove USER  remove a user from the open group",
     "  /leave         leave the open group",
     "  /rename NAME   rename the open group (its owner)",
+    "  /presence on|off  show others when you are active,",
+    "                 typing and what you have read",
     "  /delete        delete the open group (its owner)",
     "  /menu          the selected item's menu",
     "  /help          this list, over a conversation",
@@ -302,6 +315,12 @@ class App:
         self._side_rows = 0  # sidebar rows on screen
         self._layout: Optional[Tuple[int, int, int]] = None  # rows, cols, leftw
         self._cursor_at = (0, 0)
+        self._clock = time.time
+        self.beacon_cache: Dict[str, Tuple[float, dict]] = {}
+        self.beacons: Dict[str, dict] = {}
+        self._last_beacon = 0.0
+        self._last_activity = time.time()
+        self._beacon_state: Optional[Tuple[object, str]] = None
 
     # ------------------------------------------------------------------ run
     def run(self) -> None:
@@ -386,7 +405,40 @@ class App:
             else:
                 self._fetch_active(kind, target)
 
+        self._tick_beacons()
         self._rebuild_items()
+
+    def _tick_beacons(self) -> None:
+        """Read everyone's beacons (cheaply), and write ours when due."""
+        now = self._clock()
+        try:
+            self.beacons = self.s.read_beacons(self.beacon_cache)
+        except OSError:
+            pass
+        typing = (
+            self.active
+            if self.active and self.input.strip() and not self.input.startswith("/")
+            else None
+        )
+        state = (typing, repr(sorted(self.s.config["last_read"].items())))
+        if now - self._last_activity > IDLE_AFTER:
+            return
+        since = now - self._last_beacon
+        if (
+            since >= BEACON_EVERY
+            or (state != self._beacon_state and since >= BEACON_MIN)
+            or (typing is not None and since >= TYPING_REFRESH)
+        ):
+            try:
+                self.s.write_beacon(typing, now)
+            except (StoreError, OSError):
+                pass
+            self._last_beacon = now
+            self._beacon_state = state
+
+    def _presence(self, user: str) -> Optional[str]:
+        beacon = self.beacons.get(user)
+        return None if beacon is None else Session.presence(beacon, self._clock())
 
     def _fetch_active(self, kind: str, target: str) -> None:
         conv = self.s.conv_key(kind, target)
@@ -516,7 +568,8 @@ class App:
                 label = f" ✉ {payload['from']} → {payload['group_name']}"
             attr = curses.color_pair(CP_UNREAD) | curses.A_BOLD
         elif kind == "dm":
-            label = f"  {data}"
+            mark = PRESENCE_MARK.get(self._presence(str(data)) or "away")
+            label = f" {mark}{data}"
             label += self._badge(f"dm:{data}")
         elif kind == "pend":
             label = f"  {data} (invited...)"
@@ -546,7 +599,8 @@ class App:
             return "phone_a_friend"
         kind, target = self.active
         if kind == "dm":
-            return f"chat with {target}"
+            presence = self._presence(target)
+            return f"chat with {target}" + (f" ({presence})" if presence else "")
         g = self.s.config["groups"].get(target)
         if not g:
             return "?"
@@ -599,6 +653,14 @@ class App:
                 lines.append((prefix + wrapped[0], attr))
                 for cont in wrapped[1:]:
                     lines.append((" " * cells(prefix) + cont, attr))
+            dim = curses.color_pair(CP_DIM)
+            readers = self._read_by(conv)
+            if readers:
+                lines.append(("  ✓ read by " + ", ".join(readers), dim))
+            typists = self._typing_in(conv)
+            if typists:
+                verb = "is" if len(typists) == 1 else "are"
+                lines.append((f"  {', '.join(typists)} {verb} typing...", dim))
 
         max_scroll = max(0, len(lines) - height)
         self.scroll = min(self.scroll, max_scroll)
@@ -617,6 +679,25 @@ class App:
         shown, cursor_x = self._input_view(width - 2)
         _put(scr, input_row, x0, prompt + shown)
         self._cursor_at = (input_row, x0 + 2 + cursor_x)
+
+    def _read_by(self, conv: str) -> List[str]:
+        """Who has read our newest message here, by their beacons."""
+        mine = [f for f, m in self.msg_cache.get(conv, {}).items()
+                if m.get("from") == self.s.name]
+        if not mine:
+            return []
+        newest = _ts_of(max(mine))
+        return sorted(
+            user for user, b in self.beacons.items()
+            if b["convs"].get(conv, {}).get("read", 0.0) >= newest
+        )
+
+    def _typing_in(self, conv: str) -> List[str]:
+        now = self._clock()
+        return sorted(
+            user for user, b in self.beacons.items()
+            if now - b["convs"].get(conv, {}).get("typing_at", 0.0) < TYPING_TTL
+        )
 
     def _input_view(self, avail: int) -> Tuple[str, int]:
         """The part of the input line that fits in ``avail`` columns, and
@@ -658,6 +739,7 @@ class App:
     # ----------------------------------------------------------------- keys
     def _handle_key(self, scr, key: Key) -> bool:
         """Act on a key; False means quit."""
+        self._last_activity = self._clock()
         if isinstance(key, str):
             self._insert(key)
             return True
@@ -1189,7 +1271,7 @@ class App:
     # ---------------------------------------------------------- / commands
     USAGE = (
         "commands: /invite /unfriend /group /ginvite /gremove /leave "
-        "/rename /delete /menu /help /quit"
+        "/rename /delete /presence /menu /help /quit"
     )
 
     def _run_command(self, scr, text: str) -> bool:
@@ -1217,6 +1299,14 @@ class App:
                 self.status = "open a group first, then /leave"
             else:
                 self._remove_from_group(gid, self.s.name)
+        elif cmd == "/presence" and arg.lower() in ("on", "off"):
+            self.s.set_share_presence(arg.lower() == "on")
+            self._last_beacon = 0.0
+            self.status = (
+                "sharing presence, typing and read receipts"
+                if arg.lower() == "on"
+                else "presence off: nothing is written about you"
+            )
         elif cmd == "/rename" and arg or cmd == "/delete":
             gid = self._current_gid()
             if gid is None:

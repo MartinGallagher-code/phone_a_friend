@@ -43,6 +43,11 @@ Features
   future invite rebuilds the friendship and the previous chat becomes
   readable again. Any group member can remove another member (``/gremove``),
   mirroring invites; removing yourself leaves the group.
+* **Presence, typing and read receipts** — the left pane marks contacts who
+  are active (``•``) or idle (``◦``), the conversation shows "bob is typing..."
+  and "✓ read by bob" under your newest message. Each client keeps one small,
+  encrypted beacon file in the shared directory. On by default;
+  ``/presence off`` (or ``paf presence off``) stops writing it.
 * **See who's around** — registered users you have not connected with yet
   are listed under USERS in the left pane; select one to send a chat invite.
 * **Send/receive messages** to users or groups, with mouse support and
