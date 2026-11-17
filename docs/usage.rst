@@ -20,13 +20,10 @@ Key                 Action
 ==================  ========================================================
 ↑ / ↓               select a chat, group, user or invite in the left pane
 Enter               open selection — or send, if the input line has text
-F1                  help: the keys, the mouse and the slash commands
-F2 or Ctrl-N        invite a user to chat (pushes your public key)
-F3 or Ctrl-G        create a group
-F4 or Ctrl-O        invite a user to the open group (pushes the group key)
-F9                  a menu of the selected item's actions
-F10                 quit
-PgUp / PgDn         scroll message history
+Ctrl-N              invite a user to chat (pushes your public key)
+Ctrl-G              create a group
+Ctrl-O              invite a user to the open group (pushes the group key)
+PgUp / PgDn         scroll message history, or the key reference
 ← / →               move the cursor in the input line
 Home / End          start / end of the input line (also Ctrl-A / Ctrl-E)
 Backspace / Delete  delete the character before / under the cursor
@@ -38,9 +35,18 @@ decline (``n``); on a name under USERS it prompts to send them a chat
 invite.
 
 The left pane scrolls when it has more rows than the terminal; ▲ and ▼ on
-its border show that rows are hidden above or below. The bottom two rows are
-a status line and a key bar (``1Help 2Invite 3Group 4GInvite 9Menu
-10Quit``).
+its border show that rows are hidden above or below. The bottom row is the
+status line, which always ends with ``/help: keys``. While no conversation is
+open, the right pane shows the key reference: the keys, the mouse and the
+slash commands. It scrolls with PgUp/PgDn and the wheel, and ``/help`` shows
+the same list over an open conversation.
+
+F1, F2, F3, F4, F9 and F10 still do what they did in 0.2.0 (help, invite,
+group, group invite, menu, quit), but the screen no longer names them. Many
+terminals keep some function keys for themselves: GNOME Terminal, Konsole and
+xfce4-terminal open their own manual on F1, often a web page, and some take
+F10 for their menu bar. So paf points to ``/help`` and the Ctrl keys, which
+reach it in any terminal. 0.2.0's key bar along the bottom is gone.
 
 Typing takes any character — accents, CJK, emoji — exactly as typed, and
 widths are counted in terminal columns, so a line of double-width characters
@@ -61,14 +67,13 @@ double-click  open or act on any item: answer an invite, invite a user to
 right-click   a menu of the item's actions (below)
 wheel         scroll what is under the pointer: the conversation, or the
               left pane (3 lines a notch)
-key bar       click a key on the bottom row to press it
 ============  ==============================================================
 
 A single click on an invite or a name under USERS only selects it, so a
 stray click cannot pop up a question; double-click it, or press Enter.
 Scrolling the conversation back to the bottom marks it read, as PgDn does.
 
-The menu (right-click, ``F9`` or ``/menu``) offers, for
+The menu (right-click or ``/menu``) offers, for
 
 * a chat: Open, Unfriend, Invite to a group;
 * a group: Open, Invite a user, Remove a member, Leave;
@@ -94,8 +99,8 @@ Ctrl-N/Ctrl-G/Ctrl-O itself):
    /ginvite USER    invite a user to the open (or selected) group
    /gremove USER    remove a user from the open (or selected) group
    /leave           leave the open (or selected) group
-   /menu            the selected item's menu, as F9
-   /help            help, as F1
+   /menu            the selected item's menu
+   /help            the key reference, over an open conversation
    /quit            exit
 
 Scripting / headless use

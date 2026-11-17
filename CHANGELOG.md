@@ -11,6 +11,69 @@ stops working the way it did. `CLAUDE.md` has the rest.
 Sections 0.1.0 to 0.1.3 were written afterwards, from the git history, and
 are dated by their uploads to PyPI. Numbers in brackets are pull requests.
 
+## 0.3.0 — 2026-11-17
+
+The key bar along the bottom is gone, and the key reference is on screen
+instead (PAF-002). Nothing in the shared directory changed: 0.1.x, 0.2.0 and
+this client chat with each other in the same directory.
+
+### Changed
+
+- **The key bar is gone.** 0.2.0 drew `1Help 2Invite 3Group 4GInvite 9Menu
+  10Quit` on the bottom row, and a click on a label pressed that key. It did
+  not work as it looked. Several of its keys are ones terminals keep for
+  themselves: GNOME Terminal, Konsole and xfce4-terminal open their own
+  manual on F1 (often a web page), and some take F10 for their menu bar. Its
+  labels were buttons only where the terminal reports clicks. The bottom row
+  is now the status line, and the conversation and the left pane each get a
+  row back. Prompts (accept an invite, a group's name, quit) appear there,
+  as before.
+- **Nothing on screen asks for a function key.** The status line always
+  ends with `/help: keys`. Its standing hint, the help box, the welcome text
+  and the messages that used to name F3 or F4 point to the Ctrl keys and the
+  slash commands, which reach paf in any terminal.
+- **The key reference is on screen.** With no conversation open, the right
+  pane is the whole reference: the keys, the mouse and the slash commands.
+  It reads from the top and scrolls with PgUp/PgDn and the wheel, with ▲ / ▼
+  where lines are hidden. `/help` shows the same list over an open
+  conversation.
+- **F1, F2, F3, F4, F9 and F10 still work** where the terminal passes them
+  on, doing what they did in 0.2.0. They are only no longer shown.
+- **The smallest screen is a row shorter:** 6 rows by 40 columns, since the
+  bar's row is free.
+- paf never started a browser or any other program, and it still does not:
+  a web page on F1 was the terminal's own help.
+
+### Docs
+
+- The README, `docs/usage.rst`, `docs/index.html` and the `tui` module's
+  docstring describe the screen without the bar.
+- The four screens on the project page are new captures of this version,
+  taken from `paf` running in a terminal emulator against a shared directory
+  set up as before.
+
+### Tests
+
+- The key bar's tests are replaced:
+  - a click on any column of the bottom row (now the status line) runs no
+    action, at 24 rows and at 12;
+  - the status line is the last row, ends with `/help: keys`, and a prompt
+    is drawn there.
+- **No function key named:** nothing paf draws names one (at start-up, in a
+  conversation, in the help box, in a menu, and in the messages that did),
+  and nor do the hint, help and welcome texts.
+- **The reference matches the code:** it lists exactly the commands `/help`'s
+  usage line names, its Ctrl keys are bound to what it says, and it fits the
+  welcome pane.
+- **The welcome pane scrolls:** with PgUp/PgDn and the wheel, its last line
+  can be reached on a 12-row screen, and an open conversation replaces it.
+- **The smallest screen,** 6 × 40, draws the input line, and one row fewer is
+  "too small".
+- **No other program:** importing the TUI and the command imports neither
+  `webbrowser` nor `subprocess`.
+- **Rows that moved:** the mouse tests that name a row moved down with it.
+  148 tests; coverage stays at 100%.
+
 ## 0.2.0 — 2026-11-16
 
 The TUI's keyboard and mouse now work the way Meridian Commander's do
