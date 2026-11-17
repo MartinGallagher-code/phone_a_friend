@@ -28,6 +28,18 @@ Out of scope for v1
   and the number and timing of a group's messages are visible.
 * Revoking group keys.
 
+Presence
+--------
+
+Presence, typing and read receipts are **on by default**. They are written
+to ``beacons/<name>.<device>.json``; ``/presence off`` in the TUI, or
+``paf presence off``, stops writing it and deletes yours. Anyone who can
+list the shared directory sees, from that file's name and modification time,
+*that* a user is active and roughly when, and how many conversations they
+have (one entry each). Only people in a conversation can tell which entry is
+theirs or read it: the read marker and typing time in it are encrypted with
+keys derived from that conversation's key.
+
 Cryptographic primitives
 ------------------------
 

@@ -53,6 +53,11 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
   mirroring invites; removing yourself leaves the group. Removal is
   cooperative: the removed client discards its keys when it sees the notice
   (the group key is not rotated).
+* **Presence, typing and read receipts** — the left pane marks contacts who
+  are active (`•`) or idle (`◦`), the conversation shows "bob is typing..."
+  and "✓ read by bob" under your newest message. Each client keeps one small,
+  encrypted beacon file in the shared directory. On by default;
+  `/presence off` (or `paf presence off`) stops writing it.
 * **See who's around** — registered users you have not connected with yet
   are listed under USERS in the left pane; double-click one (or select it
   and press Enter) to send a chat invite.
@@ -228,6 +233,7 @@ Ctrl-N/Ctrl-G/Ctrl-O itself):
 /leave           leave the open (or selected) group
 /rename NAME     rename the open group (its owner only)
 /delete          delete the open group for everyone (its owner only)
+/presence on|off share when you are active, typing, and what you have read
 /menu            the selected item's menu
 /help            the key reference, over an open conversation
 /quit            exit
@@ -253,6 +259,8 @@ paf -d /srv/paf -u alice remove bob --group "book club"
 paf -d /srv/paf -u alice remove alice --group "book club"   # leave
 paf -d /srv/paf -u alice rename-group "book club" "reading group"
 paf -d /srv/paf -u alice delete-group "reading group"
+paf -d /srv/paf -u alice presence              # contacts: active / idle / away
+paf -d /srv/paf -u alice presence off          # stop sharing yours
 paf -d /srv/paf -u bob   status                # contacts, groups, unread
 ```
 
