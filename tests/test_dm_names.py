@@ -54,7 +54,8 @@ class DmNameTest(TuiCase):
         idents = {u: self.shared.read_identity(u)["pub"] for u in ("alice", "bob")}
         for guess in ("alice__bob", "bob__alice", idents["alice"] + idents["bob"],
                       idents["bob"] + idents["alice"]):
-            for h in (hashlib.sha256, hashlib.sha1, hashlib.md5):
+            # FIPS-approved hashes only: OpenSSL in FIPS mode refuses MD5
+            for h in (hashlib.sha256, hashlib.sha512, hashlib.sha3_256):
                 self.assertNotIn(name, h(guess.encode()).hexdigest())
         # eve's own DM with alice is somewhere else; bob is not hers to name
         self.assertNotEqual(eve.dm_directory("alice"), a.dm_directory("bob"))
