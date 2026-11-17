@@ -26,6 +26,22 @@ JSON wrapper with a ``"v"`` field naming its format, currently
 through :mod:`phone_a_friend.legacy` and migrated (see :meth:`Session.login`
 and :meth:`Session.migrate`). A record with a ``"v"`` this client does not
 know is never guessed at: it is skipped, or refused for ``config.enc``.
+
+Invites and replies are checked before anything is done with them (PAF-009),
+because anyone who can write to the shared directory can drop a file into
+another user's ``invites/`` or ``replies/``:
+
+* the sender they name must be a registered user, and on a multi-user system
+  the file must belong to the same Unix account as that user's
+  ``identity.json``;
+* a key they carry must be the one that user's ``identity.json`` publishes;
+* an acceptance must answer an invite we sent;
+* a decline, a group join and a removal carry no key, so 2.1 signs them
+  (HMAC-SHA256 under a key derived from the sender's and the recipient's
+  P-256 ECDH secret, and for a group removal the group key too);
+* a contact's stored key is never replaced: a different one is recorded as
+  a key change, and the contact moves to it only when the user has compared
+  safety numbers (:meth:`Session.safety_number`, :meth:`Session.confirm_key`).
 """
 
 from __future__ import annotations
@@ -37,12 +53,14 @@ import re
 import socket
 import secrets
 import shutil
+import stat
 import time
 from typing import Dict, List, Optional, Tuple
 
 from . import crypto
 
-SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$")
+# \Z, not $: "$" also matches before a trailing newline, so "bob\n" passed
+SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}\Z")
 
 # Directories other users must be able to drop files into. The sticky bit
 # keeps writers from deleting each other's files while still letting the
@@ -65,6 +83,26 @@ TYPING_TTL = 8
 #: How long a deleted group stays readable before clients remove it.
 GROUP_GRACE_DAYS = 3
 GROUP_GRACE = GROUP_GRACE_DAYS * 24 * 3600
+
+#: Invites and replies, by their "type", as notices name them.
+WHAT = {
+    "contact": "chat invite",
+    "group": "group invite",
+    "contact_accept": "chat acceptance",
+    "contact_decline": "chat decline",
+    "group_accept": "group acceptance",
+    "group_decline": "group decline",
+    "contact_removed": "chat removal notice",
+    "group_removed": "group removal notice",
+}
+#: Replies that carry no key, so that only a signature (or, from a client
+#: older than 2.1, which signs nothing, the file's owner) shows who sent them.
+SIGNED = {
+    "contact_decline", "group_accept", "group_decline",
+    "contact_removed", "group_removed",
+}
+#: Every kind of reply.
+REPLIES = SIGNED | {"contact_accept"}
 
 
 class StoreError(Exception):
@@ -109,6 +147,51 @@ def _make_dir(path: str, mode: int) -> None:
         pass  # not the owner; permissions were set by whoever created it
 
 
+def _sticky_dir(path: str) -> None:
+    """Make ``path`` a directory everyone can add to and no one can take
+    another's entry from: created with mode 1777, or, if it exists and is
+    ours, given the sticky bit it lacks. Without it, anyone who can write to
+    ``users/`` could rename another user's directory away and put their own
+    ``identity.json`` in its place."""
+    try:
+        os.mkdir(path)
+    except FileExistsError:
+        try:
+            st = os.stat(path)
+            if st.st_uid == os.getuid() and not st.st_mode & stat.S_ISVTX:
+                os.chmod(path, stat.S_IMODE(st.st_mode) | stat.S_ISVTX)
+        except OSError:
+            pass  # not ours to change
+        return
+    _make_dir(path, DROP_DIR_MODE)
+
+
+#: The fields each kind of invite or reply needs, all strings.
+FIELDS = {
+    "contact": ("from", "from_pub"),
+    "group": ("from", "from_pub", "group_id", "group_name", "group_key"),
+    "contact_accept": ("from", "from_pub"),
+    "contact_decline": ("from",),
+    "group_accept": ("from", "group_id"),
+    "group_decline": ("from", "group_id"),
+    "contact_removed": ("from",),
+    "group_removed": ("from", "group_id"),
+}
+
+
+def _well_formed(payload: dict, kind: str) -> bool:
+    """Whether an invite or reply has the fields its kind needs, as strings
+    (a list where a name belongs must not crash a reader)."""
+    return all(isinstance(payload.get(f), str) for f in FIELDS[kind])
+
+
+def _auth_data(payload: dict) -> bytes:
+    """The bytes a reply's signature covers: every field but the signature,
+    in one canonical form."""
+    body = {k: v for k, v in payload.items() if k != "auth"}
+    return json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+
+
 def _msg_filename() -> str:
     return f"{time.time_ns():020d}-{secrets.token_hex(4)}.json"
 
@@ -129,6 +212,13 @@ class SharedDir:
     # -- layout ------------------------------------------------------------
     def users_dir(self) -> str:
         return os.path.join(self.root, "users")
+
+    def harden(self) -> None:
+        """Give ``users/``, ``invites/`` and ``replies/`` the sticky bit
+        (:func:`_sticky_dir`): created so, or added where this user owns
+        them."""
+        for top in ("users", "invites", "replies"):
+            _sticky_dir(os.path.join(self.root, top))
 
     def user_dir(self, name: str) -> str:
         return os.path.join(self.root, "users", name)
@@ -206,11 +296,15 @@ class Session:
         self._iterations = 0
         self.config = config
         config.setdefault("legacy_contacts", {})
+        config.setdefault("verified", {})     # contact -> the key verified
+        config.setdefault("key_changes", {})  # contact -> new key, not taken
         self.priv = crypto.private_key_from_bytes(crypto.b64d(config["priv"]))
         self.pub = crypto.public_key_bytes(self.priv)
         self._legacy = None  # the 0.x X25519 key, loaded when first needed
         self._hidden_dm: Dict[str, str] = {}  # contact -> hidden DM directory
         self._moved_dm: set = set()  # contacts whose old directory we emptied
+        self._notices: List[str] = []  # from list_invites: take_notices()
+        self._ident_seen: Dict[str, tuple] = {}  # check_contact_keys' cache
 
     # ------------------------------------------------------------ accounts
     @staticmethod
@@ -237,6 +331,7 @@ class Session:
             "pending": [],         # invites we sent, awaiting a reply
         }
 
+        shared.harden()
         _make_dir(shared.user_dir(name), USER_DIR_MODE)
         _make_dir(shared.invites_dir(name), DROP_DIR_MODE)
         _make_dir(shared.replies_dir(name), DROP_DIR_MODE)
@@ -309,6 +404,7 @@ class Session:
         session = Session(shared, name, key, config)
         session._salt = salt
         session._iterations = iterations
+        shared.harden()
         if migrated:
             session.save_config()
         try:
@@ -438,14 +534,272 @@ class Session:
             self.save_config()
         return raw
 
+    def _same_key(self, name: str, a_b64: str, b_b64: str) -> bool:
+        """Whether two keys for ``name`` are one key: equal, or a 0.x key
+        and the P-256 key ``name``'s identity.json says replaced it."""
+        if a_b64 == b_b64:
+            return True
+        try:
+            return self._peer_pub(name, a_b64) == self._peer_pub(name, b_b64)
+        except StoreError:
+            return False
+
+    def _stored_is(self, name: str, raw: bytes) -> bool:
+        """Whether the key stored for contact ``name`` is ``raw``."""
+        try:
+            return self._peer_pub(name, self.config["contacts"][name]) == raw
+        except StoreError:
+            return False
+
+    def _known_key_differs(self, name: str, pub_b64: str) -> bool:
+        """True when ``name`` is a contact whose stored key is not this one."""
+        stored = self.config["contacts"].get(name)
+        return stored is not None and not self._same_key(name, stored, pub_b64)
+
+    def _key_changed(self, name: str, pub_b64: str) -> str:
+        """Record that ``name`` now has another key, without taking it, and
+        return the notice for the user."""
+        try:
+            new = crypto.b64e(self._peer_pub(name, pub_b64))
+        except StoreError:
+            new = pub_b64
+        if self.config["key_changes"].get(name) != new:
+            self.config["key_changes"][name] = new
+            self.save_config()
+        return f"{name}'s key changed — /verify {name}"
+
     def _add_contact(self, name: str, pub_b64: str) -> None:
+        """Store ``name``'s key. A contact's key is never replaced: the same
+        key again changes nothing, and a different one is refused and
+        recorded as a key change (StoreError)."""
         try:
             raw = crypto.b64d(pub_b64)
         except ValueError as exc:
             raise StoreError(f"corrupt key from {name}") from exc
+        if name in self.config["contacts"]:
+            if self._known_key_differs(name, pub_b64):
+                raise StoreError(self._key_changed(name, pub_b64))
+            return
         if len(raw) == LEGACY_PUB_LEN:
             self.config["legacy_contacts"][name] = pub_b64
         self.config["contacts"][name] = pub_b64
+
+    def _forget(self, name: str) -> None:
+        """Drop what we kept about a contact besides their key."""
+        self.config["verified"].pop(name, None)
+        self.config["key_changes"].pop(name, None)
+        self._hidden_dm.pop(name, None)
+        self._moved_dm.discard(name)
+        self._ident_seen.pop(name, None)
+
+    # ------------------------------------------------- who sent an invite
+    def _is_identity_key(self, name: str, pub_b64) -> bool:
+        """Whether ``pub_b64`` is the key ``name``'s identity.json publishes:
+        its P-256 key, or a 0.x (X25519) key it lists as replaced
+        (``legacy_pub``), or, while ``name`` is still on 0.x, its key."""
+        try:
+            raw = crypto.b64d(pub_b64)
+            ident = self.shared.read_identity(name)
+            if ident.get("v") == crypto.FORMAT:
+                known = (
+                    ident["pub"] if len(raw) != LEGACY_PUB_LEN
+                    else ident.get("legacy_pub")
+                )
+            elif "v" not in ident:
+                known = ident["pub"]
+            else:
+                return False
+            return known is not None and crypto.b64d(known) == raw
+        except (StoreError, ValueError, TypeError, AttributeError):
+            return False
+
+    def _owner_ok(self, path: str, name: str) -> bool:
+        """Whether ``path`` is a plain file owned by the Unix account that
+        owns ``name``'s identity.json. On a multi-user system no one else
+        can make such a file; where everyone shares one account, every file
+        passes, and this proves nothing."""
+        try:
+            st = os.lstat(path)
+            owner = os.lstat(self.shared.identity_path(name)).st_uid
+        except OSError:
+            return False
+        return stat.S_ISREG(st.st_mode) and st.st_uid == owner
+
+    def _owner_proves(self, name: str) -> bool:
+        """Whether a file's owner can show it is ``name``'s: true when
+        ``name``'s identity.json belongs to another account than ours."""
+        try:
+            return os.lstat(self.shared.identity_path(name)).st_uid != os.getuid()
+        except OSError:
+            return False
+
+    def _check_claim(self, payload: dict, kind: str, needs_key: bool) -> Optional[str]:
+        """Why an invite or reply cannot be from the sender it names, or None:
+        no such user, or (``needs_key``) a key that is not theirs."""
+        what = WHAT[kind]
+        sender = payload.get("from")
+        if not isinstance(sender, str) or not SAFE_NAME.match(sender):
+            return f"refused a {what} with no valid sender"
+        if sender == self.name:
+            return f"refused a {what} claiming to be from you"
+        if not self.shared.user_exists(sender):
+            return f"refused a {what} claiming to be from {sender}: no such user"
+        if needs_key and not self._is_identity_key(sender, payload.get("from_pub")):
+            return (
+                f"refused a {what} claiming to be from {sender}: "
+                f"the key in it is not {sender}'s"
+            )
+        return None
+
+    def _check_sender(
+        self, path: str, payload: dict, kind: str, needs_key: bool
+    ) -> Optional[str]:
+        """:meth:`_check_claim`, and the file's owner (:meth:`_owner_ok`)."""
+        refusal = self._check_claim(payload, kind, needs_key)
+        if refusal is None and not self._owner_ok(path, payload["from"]):
+            sender = payload["from"]
+            refusal = (
+                f"refused a {WHAT[kind]} claiming to be from {sender}: "
+                f"its file belongs to another account than {sender}'s"
+            )
+        return refusal
+
+    # ------------------------------------------------------ signed replies
+    def _known_pub(self, name: str) -> bytes:
+        """The key we hold for ``name``: their stored key if they are a
+        contact (never one from their identity.json that differs from it),
+        else the one their identity.json publishes."""
+        if name in self.config["contacts"]:
+            return self._contact_pub(name)
+        return self._identity_pub(name)
+
+    def _auth_key(self, peer_pub: bytes, gid: Optional[str] = None) -> bytes:
+        """The key a reply between us and ``peer_pub`` is signed with: from
+        our ECDH secret, which only the two of us can compute, and for a
+        group removal the group key as well, which only members hold."""
+        secret = crypto.pair_key(self.priv, peer_pub)
+        if gid is None:
+            return crypto.hkdf(secret, b"paf-reply-auth-v1")
+        return crypto.hkdf(
+            secret + self._group_key(gid), b"paf-reply-auth-grp-v1|" + gid.encode()
+        )
+
+    def _signed(self, payload: dict, peer_pub: bytes, gid: Optional[str] = None) -> dict:
+        tag = crypto.mac(self._auth_key(peer_pub, gid), _auth_data(payload))
+        return dict(payload, auth=crypto.b64e(tag))
+
+    def _auth_ok(self, payload: dict, kind: str) -> bool:
+        """Whether a reply's signature is its sender's."""
+        try:
+            gid = payload.get("group_id") if kind == "group_removed" else None
+            key = self._auth_key(self._known_pub(payload["from"]), gid)
+            tag = crypto.b64d(payload["auth"])
+        except (StoreError, ValueError, TypeError, AttributeError, KeyError):
+            return False
+        return crypto.mac_ok(key, _auth_data(payload), tag)
+
+    def _check_reply(self, path: str, payload: dict, kind: str) -> Optional[str]:
+        """Why a reply cannot be acted on, or None (see the module's
+        docstring)."""
+        refusal = self._check_sender(path, payload, kind, kind == "contact_accept")
+        if refusal is not None:
+            return refusal
+        sender, what = payload["from"], WHAT[kind]
+        if "auth" in payload:
+            if not self._auth_ok(payload, kind):
+                return (
+                    f"refused a {what} claiming to be from {sender}: "
+                    f"it is not signed with {sender}'s key"
+                )
+        elif kind in SIGNED and (
+            kind == "group_removed" or not self._owner_proves(sender)
+        ):
+            return (
+                f"ignored an unsigned {what} from {sender}: nothing shows it "
+                f"is {sender}'s (phone_a_friend before 2.1 signs none)"
+            )
+        return None
+
+    def take_notices(self) -> List[str]:
+        """Notices :meth:`list_invites` queued (invites it refused), once.
+        :meth:`process_replies` returns them too, last."""
+        notices, self._notices = self._notices, []
+        return notices
+
+    # ----------------------------------------------------- safety numbers
+    def check_contact_keys(self) -> List[str]:
+        """Compare each contact's stored key with the one their identity.json
+        publishes now. A different one is not taken: it is recorded, and the
+        user is told once, until they compare safety numbers and accept it
+        (:meth:`confirm_key`). A contact whose identity.json is back to the
+        stored key is no longer marked. Returns notices."""
+        notices = []
+        for name in sorted(self.config["contacts"]):
+            try:
+                st = os.stat(self.shared.identity_path(name))
+            except OSError:
+                continue
+            seen = (st.st_mtime_ns, st.st_size, st.st_ino,
+                    self.config["contacts"][name])
+            if self._ident_seen.get(name) == seen:
+                continue
+            self._ident_seen[name] = seen
+            try:
+                current = self._identity_pub(name)
+            except StoreError:
+                continue  # still on 0.x, or unreadable: nothing to compare
+            if self._stored_is(name, current):
+                if self.config["key_changes"].pop(name, None) is not None:
+                    self.save_config()
+            elif self.config["key_changes"].get(name) != crypto.b64e(current):
+                notices.append(self._key_changed(name, crypto.b64e(current)))
+        return notices
+
+    def safety_number(self, name: str) -> Tuple[str, str, bool]:
+        """(safety number, the key it is for, whether that is a new key the
+        contact has not been moved to). The number is the same on both
+        sides; comparing it out of band shows that each holds the other's
+        real key. For a contact with a key change, it is for the new key in
+        their identity.json."""
+        if name not in self.config["contacts"]:
+            raise StoreError(
+                f"{name} is not a contact - send or accept an invite first"
+            )
+        changed = False
+        if name in self.config["key_changes"]:
+            their = self._identity_pub(name)
+            changed = not self._stored_is(name, their)
+        else:
+            their = self._contact_pub(name)
+        return crypto.safety_number(self.pub, their), crypto.b64e(their), changed
+
+    def is_verified(self, name: str) -> bool:
+        """Whether the user compared safety numbers for ``name``'s key."""
+        key = self.config["verified"].get(name)
+        return (
+            key is not None
+            and key == self.config["contacts"].get(name)
+            and name not in self.config["key_changes"]
+        )
+
+    def confirm_key(self, name: str, key_b64: str) -> bool:
+        """The user compared the safety number for ``key_b64`` (from
+        :meth:`safety_number`) and it matched: mark ``name`` verified, moving
+        them to that key if it is a new one. Returns True if they moved; a
+        contact with a new key no longer has ours, so it is pushed to them
+        again, as an invite."""
+        _, current, changed = self.safety_number(name)
+        if key_b64 != current:
+            raise StoreError(f"{name}'s key changed again — /verify {name}")
+        if changed:
+            self.config["contacts"][name] = current
+            self._hidden_dm.pop(name, None)
+            self._moved_dm.discard(name)
+            self._push_invite(name, crypto.b64d(current))
+        self.config["key_changes"].pop(name, None)
+        self.config["verified"][name] = current
+        self.save_config()
+        return changed
 
     # ------------------------------------------------------------- invites
     def invite_contact(self, other: str) -> None:
@@ -459,7 +813,11 @@ class Session:
             for p in self.config["pending"]
         ):
             raise StoreError(f"invite to {other} is already pending")
-        pub = self._identity_pub(other)
+        self._push_invite(other, self._identity_pub(other))
+        self.save_config()
+
+    def _push_invite(self, other: str, pub: bytes) -> None:
+        """Drop a chat invite with our key for ``other``, and remember it."""
         payload = {
             "type": "contact",
             "from": self.name,
@@ -467,8 +825,9 @@ class Session:
             "ts": time.time(),
         }
         self._drop_sealed(self.shared.invites_dir(other), crypto.b64e(pub), payload)
-        self.config["pending"].append({"type": "contact", "to": other})
-        self.save_config()
+        pending = {"type": "contact", "to": other}
+        if pending not in self.config["pending"]:
+            self.config["pending"].append(pending)
 
     def invite_group(self, gid: str, other: str) -> None:
         """Push a group invite (containing the group key) to another user."""
@@ -501,7 +860,9 @@ class Session:
         )
 
     def list_invites(self) -> List[Tuple[str, dict]]:
-        """Incoming invites we can decrypt: [(filename, payload)]."""
+        """Incoming invites we can decrypt and that are from who they say:
+        [(filename, payload)]. Anything else is discarded, with a notice
+        (:meth:`take_notices`) when it was refused."""
         out = []
         directory = self.shared.invites_dir(self.name)
         try:
@@ -511,15 +872,29 @@ class Session:
         for fname in names:
             if not fname.endswith(".json"):
                 continue
-            payload = self._read_sealed(os.path.join(directory, fname))
+            path = os.path.join(directory, fname)
+            payload = self._read_sealed(path)
             if payload is None:
                 continue
-            if payload.get("type") == "contact" and payload.get("from") in self.config["contacts"]:
-                # stale invite from someone who is already a contact
-                self._discard(os.path.join(directory, fname))
+            kind = payload.get("type")
+            if kind not in ("contact", "group") or not _well_formed(payload, kind):
+                self._discard(path)
                 continue
-            if payload.get("type") == "group" and payload.get("group_id") in self.config["groups"]:
-                self._discard(os.path.join(directory, fname))
+            refusal = self._check_sender(path, payload, kind, needs_key=True)
+            if refusal is None and self._known_key_differs(
+                payload["from"], payload["from_pub"]
+            ):
+                refusal = self._key_changed(payload["from"], payload["from_pub"])
+            if refusal is not None:
+                self._notices.append(refusal)
+                self._discard(path)
+                continue
+            if kind == "contact" and payload["from"] in self.config["contacts"]:
+                # stale invite from someone who is already a contact
+                self._discard(path)
+                continue
+            if kind == "group" and payload.get("group_id") in self.config["groups"]:
+                self._discard(path)
                 continue
             out.append((fname, payload))
         return out
@@ -560,6 +935,12 @@ class Session:
         sender = payload["from"]
         if payload["type"] not in ("contact", "group"):
             raise StoreError(f"unknown invite type: {payload['type']}")
+        # list_invites checked the file; a payload can come from anywhere
+        refusal = self._check_claim(payload, payload["type"], needs_key=True)
+        if refusal is not None:
+            raise StoreError(refusal)
+        if self._known_key_differs(sender, payload["from_pub"]):
+            raise StoreError(self._key_changed(sender, payload["from_pub"]))
         # where the reply goes: an invite 0.x sealed carries an X25519 key
         reply_pub = self._peer_pub(sender, payload["from_pub"])
         if payload["type"] == "contact":
@@ -586,7 +967,9 @@ class Session:
 
         self.save_config()
         self._drop_sealed(
-            self.shared.replies_dir(sender), crypto.b64e(reply_pub), reply
+            self.shared.replies_dir(sender),
+            crypto.b64e(reply_pub),
+            self._signed(reply, reply_pub),
         )
         self._discard(os.path.join(self.shared.invites_dir(self.name), fname))
         return desc
@@ -597,13 +980,19 @@ class Session:
             "from": self.name,
             "group_id": payload.get("group_id"),
         }
-        try:
-            pub = self._peer_pub(payload["from"], payload["from_pub"])
-        except StoreError:
-            pub = None  # a 0.x sender could not read the reply anyway
+        from_pub = payload["from_pub"]
+        pub = None
+        # no answer to an invite that is not from who it says
+        if self._check_claim(payload, payload["type"], needs_key=True) is None:
+            try:
+                pub = self._peer_pub(payload["from"], from_pub)
+            except StoreError:
+                pass  # a 0.x sender could not read the reply anyway
         if pub is not None:
             self._drop_sealed(
-                self.shared.replies_dir(payload["from"]), crypto.b64e(pub), reply
+                self.shared.replies_dir(payload["from"]),
+                crypto.b64e(pub),
+                self._signed(reply, pub),
             )
         self._discard(os.path.join(self.shared.invites_dir(self.name), fname))
 
@@ -616,6 +1005,7 @@ class Session:
         pub_b64 = self.config["contacts"].pop(other, None)
         if pub_b64 is None:
             raise StoreError(f"{other} is not a contact")
+        self._forget(other)
         self.save_config()
         try:
             pub = self._peer_pub(other, pub_b64)
@@ -624,7 +1014,7 @@ class Session:
         self._drop_sealed(
             self.shared.replies_dir(other),
             crypto.b64e(pub),
-            {"type": "contact_removed", "from": self.name},
+            self._signed({"type": "contact_removed", "from": self.name}, pub),
         )
 
     def remove_group_member(self, gid: str, other: str) -> None:
@@ -632,7 +1022,8 @@ class Session:
 
         Removing yourself leaves the group. Removal is cooperative: the
         removed user's client discards the group key when it sees the
-        notice — the key itself is not rotated."""
+        notice — the key itself is not rotated. The notice is signed with
+        the group key, so only a member can send one."""
         group = self.config["groups"].get(gid)
         if group is None:
             raise StoreError("you are not a member of that group")
@@ -641,25 +1032,30 @@ class Session:
             self.save_config()
             return
         pub = self._identity_pub(other)
+        notice = {
+            "type": "group_removed",
+            "from": self.name,
+            "group_id": gid,
+            "group_name": group["name"],
+        }
         self._drop_sealed(
             self.shared.replies_dir(other),
             crypto.b64e(pub),
-            {
-                "type": "group_removed",
-                "from": self.name,
-                "group_id": gid,
-                "group_name": group["name"],
-            },
+            self._signed(notice, pub, gid),
         )
 
     def process_replies(self) -> List[str]:
-        """Consume invite replies addressed to us; returns notice strings."""
-        notices = []
+        """Consume invite replies addressed to us. Returns notices: what
+        happened, then anything refused or changed (refusals, key changes,
+        and the notices :meth:`list_invites` queued), so that the last one,
+        which the TUI's status line keeps, is the one that matters most."""
+        notices: List[str] = []
+        warnings = self.check_contact_keys()
         directory = self.shared.replies_dir(self.name)
         try:
             names = sorted(os.listdir(directory))
         except FileNotFoundError:
-            return notices
+            names = []
         changed = False
         for fname in names:
             if not fname.endswith(".json"):
@@ -668,44 +1064,106 @@ class Session:
             payload = self._read_sealed(path)
             if payload is None:
                 continue
-            sender = payload.get("from", "?")
             kind = payload.get("type")
+            relevant = (
+                kind in REPLIES
+                and _well_formed(payload, kind)
+                and self._concerns_us(payload, kind)
+            )
+            refusal = self._check_reply(path, payload, kind) if relevant else None
+            self._discard(path)
+            if not relevant:
+                continue  # unknown, malformed, or about nothing of ours
+            if refusal is not None:
+                warnings.append(refusal)
+                continue
+            sender = payload["from"]
+            if kind == "contact_accept" and not self._has_pending("contact", sender):
+                warnings.append(
+                    f"ignored a chat acceptance from {sender}: "
+                    f"you did not invite {sender}"
+                )
+                continue
+            changed = True
             if kind == "contact_accept":
-                self._add_contact(sender, payload["from_pub"])
                 self._clear_pending("contact", sender)
-                notices.append(f"{sender} accepted your chat invite")
-                changed = True
+                if self._known_key_differs(sender, payload["from_pub"]):
+                    warnings.append(self._key_changed(sender, payload["from_pub"]))
+                else:
+                    self._add_contact(sender, payload["from_pub"])
+                    notices.append(f"{sender} accepted your chat invite")
             elif kind == "contact_decline":
                 self._clear_pending("contact", sender)
                 notices.append(f"{sender} declined your chat invite")
-                changed = True
             elif kind == "group_accept":
                 self._clear_pending("group", sender, payload.get("group_id"))
                 notices.append(
                     f"{sender} joined group '{payload.get('group_name', '?')}'"
                 )
-                changed = True
             elif kind == "group_decline":
                 self._clear_pending("group", sender, payload.get("group_id"))
                 notices.append(f"{sender} declined a group invite")
-                changed = True
             elif kind == "contact_removed":
-                if self.config["contacts"].pop(sender, None) is not None:
-                    notices.append(
-                        f"{sender} ended your chat - a new invite can restore it"
-                    )
-                    changed = True
-            elif kind == "group_removed":
-                group = self.config["groups"].pop(payload.get("group_id"), None)
-                if group is not None:
-                    notices.append(
-                        f"{sender} removed you from group '{group['name']}'"
-                    )
-                    changed = True
-            self._discard(path)
+                del self.config["contacts"][sender]
+                self._forget(sender)
+                notices.append(
+                    f"{sender} ended your chat - a new invite can restore it"
+                )
+            else:  # group_removed
+                group = self.config["groups"].pop(payload["group_id"])
+                notices.append(f"{sender} removed you from group '{group['name']}'")
         if changed:
             self.save_config()
-        return notices
+        # a key change can be seen twice in one pass: say it once
+        return notices + list(dict.fromkeys(warnings + self.take_notices()))
+
+    def _concerns_us(self, payload: dict, kind: str) -> bool:
+        """Whether a reply is about something of ours: an invite we sent, a
+        contact we have, a group we are in. One that is not is dropped
+        unread, with no notice. An acceptance of an invite we never sent is
+        the exception: it is checked, and the notice says so."""
+        sender = payload.get("from")
+        if kind == "contact_accept":
+            return True
+        if kind in ("contact_decline", "group_accept", "group_decline"):
+            gid = None if kind == "contact_decline" else payload.get("group_id")
+            return self._has_pending(kind.split("_")[0], sender, gid)
+        if kind == "contact_removed":
+            return sender in self.config["contacts"]
+        return payload.get("group_id") in self.config["groups"]  # group_removed
+
+    def _has_pending(self, kind: str, to, gid: Optional[str] = None) -> bool:
+        """Whether we sent ``to`` an invite of this kind, still unanswered:
+        in this session's config, or in the one on disk, which another
+        device of ours may have written since we read it."""
+        def match(pending):
+            return any(
+                isinstance(p, dict)
+                and p.get("type") == kind
+                and p.get("to") == to
+                and (kind != "group" or p.get("group_id") == gid)
+                for p in pending
+            )
+
+        return match(self.config["pending"]) or match(self._pending_on_disk())
+
+    def _pending_on_disk(self) -> list:
+        """The pending invites in our config.enc as it is on disk now, or []
+        if it cannot be read with this session's key."""
+        try:
+            with open(self.shared.config_path(self.name), "rb") as fh:
+                wrapper = json.loads(fh.read())
+            config = json.loads(
+                crypto.sym_decrypt(
+                    self._cfg_key, crypto.b64d(wrapper["blob"]), b"paf-config"
+                )
+            )
+            return list(config["pending"])
+        except (
+            OSError, ValueError, KeyError, TypeError, AttributeError,
+            crypto.DecryptError,
+        ):
+            return []
 
     def _clear_pending(self, kind: str, to: str, gid: Optional[str] = None) -> None:
         self.config["pending"] = [

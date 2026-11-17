@@ -132,9 +132,16 @@ def cmd_remove(args) -> None:
         print(f"unfriended {args.to} - a future invite can restore the chat")
 
 
+def _print_notices(s: Session) -> None:
+    """Print what list_invites refused."""
+    for notice in s.take_notices():
+        print(f"* {notice}")
+
+
 def cmd_invites(args) -> None:
     s = _open_session_synced(args)
     invites = s.list_invites()
+    _print_notices(s)
     if not invites:
         print("no pending invites")
         return
@@ -151,7 +158,9 @@ def cmd_invites(args) -> None:
 def cmd_accept(args) -> None:
     s = _open_session_synced(args)
     accepted = 0
-    for fname, payload in s.list_invites():
+    invites = s.list_invites()
+    _print_notices(s)
+    for fname, payload in invites:
         if args.sender in (None, payload["from"]):
             print("accepted:", s.accept_invite(fname, payload))
             accepted += 1
@@ -258,12 +267,54 @@ def cmd_presence(args) -> None:
         print(f"  {c}: {Session.presence(beacons.get(c))}")
 
 
+def cmd_verify(args) -> None:
+    s = _open_session_synced(args)
+    name = args.contact
+    number, key, changed = s.safety_number(name)
+    groups = number.split()
+    if changed:
+        print(f"{name}'s key changed: paf still uses the old one.")
+        print(f"safety number with {name}'s NEW key:")
+    else:
+        print(f"safety number with {name}:")
+    for i in range(0, len(groups), 4):
+        print("  " + " ".join(groups[i:i + 4]))
+    if not changed and s.is_verified(name):
+        print(f"{name} is verified")
+        return
+    print(f"{name} sees the same number for you: compare every digit, "
+          "in person or by phone.")
+    question = (
+        f"accept {name}'s new key - do the numbers match? [y/N] " if changed
+        else f"do the numbers match? mark {name} verified [y/N] "
+    )
+    try:
+        answer = input(question)
+    except EOFError:
+        answer = ""  # nobody to ask: a script, or input from /dev/null
+    if not answer.strip().lower().startswith("y"):
+        print(f"{name} is not verified")
+        return
+    moved = s.confirm_key(name, key)
+    if moved:
+        print(f"{name}'s new key accepted - verified; "
+              f"your key was pushed to {name} as a chat invite")
+    else:
+        print(f"{name} verified")
+
+
+def _key_note(s: Session, name: str) -> str:
+    if name in s.config["key_changes"]:
+        return f"  key changed: paf verify {name}"
+    return "  verified" if s.is_verified(name) else ""
+
+
 def cmd_status(args) -> None:
     s = _open_session_synced(args)
     print(f"user: {s.name}")
     print("contacts:")
     for c in sorted(s.config["contacts"]):
-        print(f"  {c}  (unread: {s.unread_count('dm', c)})")
+        print(f"  {c}  (unread: {s.unread_count('dm', c)}){_key_note(s, c)}")
     print("groups:")
     for gid, g in s.config["groups"].items():
         print(f"  #{g['name']} [{gid}]  (unread: {s.unread_count('grp', gid)})")
@@ -304,6 +355,12 @@ def main(argv=None) -> None:
     p.add_argument(
         "--group", "-g", help="remove from this group instead (yourself = leave)"
     )
+    p = sub.add_parser(
+        "verify",
+        help="show a contact's safety number, to compare with theirs, "
+        "and mark them verified",
+    )
+    p.add_argument("contact")
     sub.add_parser("invites", help="list incoming invites")
     p = sub.add_parser("accept", help="accept pending invites")
     p.add_argument("--from", dest="sender", help="only invites from this user")
@@ -346,6 +403,7 @@ def main(argv=None) -> None:
         "register": cmd_register,
         "invite": cmd_invite,
         "remove": cmd_remove,
+        "verify": cmd_verify,
         "invites": cmd_invites,
         "accept": cmd_accept,
         "create-group": cmd_create_group,

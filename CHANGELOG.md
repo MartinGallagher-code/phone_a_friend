@@ -11,6 +11,56 @@ stops working the way it did. `CLAUDE.md` has the rest.
 Sections 0.1.0 to 0.1.3 were written afterwards, from the git history, and
 are dated by their uploads to PyPI. Numbers in brackets are pull requests.
 
+## 2.1.0 — 2026-11-17
+
+Invites and replies are checked before they are acted on, so no one on the
+share can swap a contact's key, and safety numbers let people verify each
+other (PAF-009). Everything 2.0 wrote still loads; only forged files are
+newly refused, and the unsigned notices of a 2.0 client where nothing shows
+who sent them.
+
+### Fixed
+
+- **A contact's key could be swapped by anyone who could write to the
+  share.** A forged acceptance dropped in `replies/<you>/` replaced the
+  stored key, and what you then sent "to" that contact was readable by
+  whoever forged it. Now the key in an invite or an acceptance must be the
+  one the sender's `identity.json` publishes, an acceptance must answer an
+  invite you sent, and on a multi-user system the file must belong to the
+  sender's own Unix account. Anything else is refused, with a notice naming
+  the sender it claimed to be from.
+- **Invites in someone else's name** are refused the same way.
+- **Forged removals.** Declines, group joins, unfriend notices and group
+  removals are now signed (HMAC-SHA256 under a key from the sender's and
+  recipient's ECDH secret; a group removal's key also takes in the group
+  key, so only a member can send one). An unsigned one, from a client
+  before 2.1, still counts when its file's Unix owner shows who sent it,
+  except a group removal.
+- **`users/`, `invites/` and `replies/` get the sticky bit**, so no one can
+  rename another user's directory away and plant their own
+  `identity.json`: 1777 when the client makes them, and the bit added on
+  login to one its user owns.
+- A user name may no longer end in a newline (`$` in the name pattern also
+  matched before one).
+- A malformed invite or reply (a list where a name belongs) is dropped
+  instead of stopping the client.
+
+### Added
+
+- **A contact's key is never replaced silently.** When their
+  `identity.json` (or an invite or reply) shows another key, paf keeps the
+  old one, marks them `!` in the left pane and says "bob's key changed —
+  /verify bob" once.
+- **Safety numbers**: `/verify USER` in the TUI (also Verify in a chat's
+  menu, and `/verify` alone in an open chat) and `paf verify USER` show 60
+  digits, SHA-256 over both public keys, the same on both sides. If they
+  match, mark the contact verified: `✓` in the left pane and the chat's
+  title, "verified" in `paf status`. For a changed key the number is for the
+  new key, and accepting it moves the contact to it and sends them your key
+  again as a chat invite.
+- **Docs**: what is authenticated and what is not, verifying a contact, and
+  mixing versions (`docs/security.rst`, README, `docs/usage.rst`).
+
 ## 2.0.0 — 2026-11-17
 
 DM directories no longer show who talks to whom (PAF-008). This is 2.0.0
