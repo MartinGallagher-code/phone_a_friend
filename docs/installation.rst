@@ -19,6 +19,28 @@ From a checkout:
    pip install -r requirements.txt
    alias paf='python -m phone_a_friend'
 
+On a FIPS host
+--------------
+
+phone_a_friend uses only FIPS-approved algorithms (:doc:`security`), but
+whether they run inside a FIPS-validated module depends on the OpenSSL that
+``cryptography`` is bound to. The wheels on PyPI bundle their own OpenSSL,
+which is not validated. On RHEL 9 or Rocky 9 in FIPS mode, use the
+distribution's package instead, which is built against the system OpenSSL
+and its FIPS provider:
+
+.. code-block:: bash
+
+   sudo dnf install python3-cryptography      # or ask your administrator
+   python3 -m venv --system-site-packages ~/paf-venv
+   ~/paf-venv/bin/pip install --no-deps phoneafriend
+   ~/paf-venv/bin/paf --version               # last line: "FIPS mode on"
+
+``paf --version`` ends with the OpenSSL in use and whether it is in FIPS
+mode. When it is not, every ``paf`` command prints one warning on stderr and
+carries on (the TUI says so on its status line); ``PAF_FIPS_WARNING=0``
+silences it.
+
 Set up a shared directory
 -------------------------
 

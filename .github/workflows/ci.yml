@@ -39,6 +39,40 @@ jobs:
           paf -d "$D" -u bob   --passphrase pw-b read --to alice | grep -q "hello"
           ! grep -r "hello" "$D" --include="*.json" -l | grep -q . || exit 1
 
+  fips:
+    # The suite on Rocky Linux 9's own python3-cryptography, bound to the
+    # system OpenSSL 3 and its FIPS provider. OPENSSL_FORCE_FIPS_MODE is
+    # RHEL's switch for putting that OpenSSL in FIPS mode without booting
+    # the host with fips=1: the same provider and the same refusals (X25519
+    # and ChaCha20 fail), which the suite checks it is really under.
+    name: fips (Rocky Linux 9)
+    runs-on: ubuntu-latest
+    container: quay.io/rockylinux/rockylinux:9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the distribution's cryptography (no pip)
+        run: dnf -y -q install python3-cryptography
+      - name: Run the suite with OpenSSL in FIPS mode
+        env:
+          OPENSSL_FORCE_FIPS_MODE: "1"
+        run: |
+          python3 -c "from phone_a_friend import crypto; assert crypto.fips_enabled(), crypto.fips_status(); print(crypto.fips_status())"
+          python3 -m unittest discover -s tests -v
+      - name: Smoke-test paf in FIPS mode
+        env:
+          OPENSSL_FORCE_FIPS_MODE: "1"
+        run: |
+          D="$(mktemp -d)"
+          paf() { python3 -m phone_a_friend "$@"; }
+          paf -d "$D" -u alice --passphrase pw-a register 2> err.txt
+          ! grep -q "FIPS" err.txt
+          paf -d "$D" -u bob   --passphrase pw-b register
+          paf -d "$D" -u alice --passphrase pw-a invite bob
+          paf -d "$D" -u bob   --passphrase pw-b accept --from alice
+          paf -d "$D" -u alice --passphrase pw-a send --to bob "hello"
+          paf -d "$D" -u bob   --passphrase pw-b read --to alice | grep -q "hello"
+          ! grep -r "hello" "$D" --include="*.json" -l | grep -q . || exit 1
+
   version:
     name: version
     runs-on: ubuntu-latest

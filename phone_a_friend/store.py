@@ -17,6 +17,13 @@ shared directory. Layout::
 
 Access control = filesystem permissions on the shared directory plus
 encryption: a message can only be decrypted by holders of the right keys.
+
+Every encrypted record (``config.enc``, invites, replies and messages) is a
+JSON wrapper with a ``"v"`` field naming its format, currently
+:data:`crypto.FORMAT`. Records written by 0.x have no ``"v"``; they are read
+through :mod:`phone_a_friend.legacy` and migrated (see :meth:`Session.login`
+and :meth:`Session.migrate`). A record with a ``"v"`` this client does not
+know is never guessed at: it is skipped, or refused for ``config.enc``.
 """
 
 from __future__ import annotations
@@ -41,8 +48,24 @@ PUBLIC_FILE_MODE = 0o644
 PRIVATE_FILE_MODE = 0o600
 
 
+# 0.x identity keys were raw X25519 public keys, 32 bytes long.
+LEGACY_PUB_LEN = 32
+
+
 class StoreError(Exception):
     pass
+
+
+def _not_upgraded(name: str) -> StoreError:
+    return StoreError(
+        f"{name} has not upgraded to phone_a_friend 1.0 yet - "
+        "their messages so far can still be read"
+    )
+
+
+def _wrap(field: str, blob: bytes) -> bytes:
+    """An encrypted record as written to disk: its format, then its bytes."""
+    return json.dumps({"v": crypto.FORMAT, field: crypto.b64e(blob)}).encode()
 
 
 def _atomic_write(path: str, data: bytes, mode: int) -> None:
@@ -159,9 +182,13 @@ class Session:
         self.shared = shared
         self.name = name
         self._cfg_key = key  # passphrase-derived key protecting config.enc
+        self._salt = b""
+        self._iterations = 0
         self.config = config
+        config.setdefault("legacy_contacts", {})
         self.priv = crypto.private_key_from_bytes(crypto.b64d(config["priv"]))
         self.pub = crypto.public_key_bytes(self.priv)
+        self._legacy = None  # the 0.x X25519 key, loaded when first needed
 
     # ------------------------------------------------------------ accounts
     @staticmethod
@@ -179,6 +206,7 @@ class Session:
 
         priv = crypto.generate_private_key()
         config = {
+            "v": crypto.FORMAT,
             "name": name,
             "priv": crypto.b64e(crypto.private_key_bytes(priv)),
             "contacts": {},        # name -> public key (b64)
@@ -191,19 +219,30 @@ class Session:
         _make_dir(shared.invites_dir(name), DROP_DIR_MODE)
         _make_dir(shared.replies_dir(name), DROP_DIR_MODE)
 
-        identity = {"name": name, "pub": crypto.b64e(crypto.public_key_bytes(priv))}
+        salt = crypto.random_bytes(crypto.SALT_LEN)
+        iterations = crypto.PBKDF2_ITERATIONS
+        key = crypto.derive_passphrase_key(passphrase, salt, iterations)
+        session = Session(shared, name, key, config)
+        session._salt = salt
+        session._iterations = iterations
+        session._write_identity()
+        session.save_config()
+        return session
+
+    def _write_identity(self) -> None:
+        identity = {
+            "name": self.name,
+            "v": crypto.FORMAT,
+            "pub": crypto.b64e(self.pub),
+        }
+        if "legacy_pub" in self.config:
+            # lets contacts who hold our 0.x key move to the new one
+            identity["legacy_pub"] = self.config["legacy_pub"]
         _atomic_write(
-            shared.identity_path(name),
+            self.shared.identity_path(self.name),
             json.dumps(identity, indent=2).encode(),
             PUBLIC_FILE_MODE,
         )
-
-        salt = os.urandom(crypto.SALT_LEN)
-        key = crypto.derive_passphrase_key(passphrase, salt)
-        session = Session(shared, name, key, config)
-        session._salt = salt
-        session.save_config()
-        return session
 
     @staticmethod
     def login(shared: SharedDir, name: str, passphrase: str) -> "Session":
@@ -213,19 +252,104 @@ class Session:
         try:
             with open(shared.config_path(name), "rb") as fh:
                 wrapper = json.loads(fh.read())
+            if not isinstance(wrapper, dict):
+                raise ValueError("not a config wrapper")
         except (OSError, ValueError) as exc:
             raise StoreError("could not read config file") from exc
-        salt = crypto.b64d(wrapper["salt"])
-        key = crypto.derive_passphrase_key(passphrase, salt)
+        version = wrapper.get("v")
         try:
-            config = json.loads(
-                crypto.sym_decrypt(key, crypto.b64d(wrapper["blob"]), b"paf-config")
-            )
+            if version == crypto.FORMAT:
+                salt = crypto.b64d(wrapper["salt"])
+                iterations = int(wrapper["kdf"]["iterations"])
+                key = crypto.derive_passphrase_key(passphrase, salt, iterations)
+                config = json.loads(
+                    crypto.sym_decrypt(
+                        key, crypto.b64d(wrapper["blob"]), b"paf-config"
+                    )
+                )
+                migrated = False
+            elif version is None:
+                config = Session._read_legacy_config(wrapper, passphrase)
+                salt = crypto.random_bytes(crypto.SALT_LEN)
+                iterations = crypto.PBKDF2_ITERATIONS
+                key = crypto.derive_passphrase_key(passphrase, salt, iterations)
+                Session._migrate_config(config)
+                migrated = True
+            else:
+                raise StoreError(
+                    f"config.enc is in format {version!r}, which this "
+                    "phone_a_friend does not know - upgrade it"
+                )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise StoreError("could not read config file") from exc
         except crypto.DecryptError as exc:
             raise StoreError("wrong passphrase") from exc
         session = Session(shared, name, key, config)
         session._salt = salt
+        session._iterations = iterations
+        if migrated:
+            session.save_config()
+        try:
+            published = shared.read_identity(name).get("pub")
+        except StoreError:
+            published = None
+        if published != crypto.b64e(session.pub):
+            session._write_identity()
+        if migrated:
+            session.migrate()
         return session
+
+    @staticmethod
+    def _read_legacy_config(wrapper: dict, passphrase: str) -> dict:
+        """Decrypt a config.enc written by 0.x (scrypt + ChaCha20-Poly1305)."""
+        from . import legacy
+
+        kdf = wrapper.get("kdf", {})
+        try:
+            key = legacy.derive_passphrase_key(
+                passphrase,
+                crypto.b64d(wrapper["salt"]),
+                kdf.get("n", 2 ** 14),
+                kdf.get("r", 8),
+                kdf.get("p", 1),
+            )
+            return json.loads(
+                legacy.sym_decrypt(key, crypto.b64d(wrapper["blob"]), b"paf-config")
+            )
+        except crypto.LegacyUnavailable as exc:
+            raise StoreError(
+                "this account was made by phone_a_friend 0.x, and moving it "
+                "to the FIPS algorithms needs its old ones (scrypt, X25519, "
+                "ChaCha20-Poly1305), which this OpenSSL refuses in FIPS mode: "
+                "log in once where OpenSSL is not in FIPS mode "
+                "(docs/security.rst, Migrating from 0.x)"
+            ) from exc
+
+    @staticmethod
+    def _migrate_config(config: dict) -> None:
+        """Give a 0.x config a P-256 identity, keeping its X25519 key and
+        its contacts' X25519 keys only to read what 0.x wrote."""
+        from . import legacy
+
+        old = legacy.private_key_from_bytes(crypto.b64d(config["priv"]))
+        config["legacy_priv"] = config["priv"]
+        config["legacy_pub"] = crypto.b64e(legacy.public_key_bytes(old))
+        config["legacy_contacts"] = dict(config.get("contacts", {}))
+        config["priv"] = crypto.b64e(
+            crypto.private_key_bytes(crypto.generate_private_key())
+        )
+        config["v"] = crypto.FORMAT
+
+    def _legacy_priv(self):
+        """Our 0.x X25519 key, or None for an account that never had one.
+        Raises crypto.LegacyUnavailable where OpenSSL refuses X25519."""
+        if self._legacy is None and "legacy_priv" in self.config:
+            from . import legacy
+
+            self._legacy = legacy.private_key_from_bytes(
+                crypto.b64d(self.config["legacy_priv"])
+            )
+        return self._legacy
 
     def save_config(self) -> None:
         blob = crypto.sym_encrypt(
@@ -234,8 +358,10 @@ class Session:
             b"paf-config",
         )
         wrapper = {
+            "v": crypto.FORMAT,
             "salt": crypto.b64e(self._salt),
-            "kdf": {"n": crypto.SCRYPT_N, "r": crypto.SCRYPT_R, "p": crypto.SCRYPT_P},
+            "kdf": {"alg": crypto.KDF_NAME, "iterations": self._iterations},
+            "aead": crypto.AEAD_NAME,
             "blob": crypto.b64e(blob),
         }
         _atomic_write(
@@ -243,6 +369,61 @@ class Session:
             json.dumps(wrapper).encode(),
             PRIVATE_FILE_MODE,
         )
+
+    # --------------------------------------------------------- peer keys
+    def _identity_pub(self, name: str) -> bytes:
+        """A user's current public key, from their identity.json."""
+        ident = self.shared.read_identity(name)
+        if ident.get("v") != crypto.FORMAT:
+            raise _not_upgraded(name)
+        try:
+            raw = crypto.b64d(ident["pub"])
+        except ValueError as exc:
+            raise StoreError(f"corrupt identity for {name}") from exc
+        if not crypto.is_public_key(raw):
+            raise StoreError(f"corrupt identity for {name}")
+        return raw
+
+    def _peer_pub(self, name: str, pub_b64: str) -> bytes:
+        """The P-256 key to use for a peer we know by ``pub_b64``.
+
+        A 0.x (X25519) key is swapped for the peer's new one once their
+        identity.json says it replaced exactly that key. Raises StoreError
+        when the peer has not upgraded, or the key is corrupt."""
+        try:
+            raw = crypto.b64d(pub_b64)
+        except ValueError as exc:
+            raise StoreError(f"corrupt key stored for {name}") from exc
+        if crypto.is_public_key(raw):
+            return raw
+        if len(raw) != LEGACY_PUB_LEN:
+            raise StoreError(f"corrupt key stored for {name}")
+        try:
+            ident = self.shared.read_identity(name)
+        except StoreError:
+            raise _not_upgraded(name)
+        if ident.get("legacy_pub") != pub_b64:
+            raise _not_upgraded(name)
+        return self._identity_pub(name)
+
+    def _contact_pub(self, name: str) -> bytes:
+        """A contact's P-256 key, upgrading a stored 0.x key when it can."""
+        pub_b64 = self.config["contacts"][name]  # _conv_location checked it
+        raw = self._peer_pub(name, pub_b64)
+        new_b64 = crypto.b64e(raw)
+        if new_b64 != pub_b64:
+            self.config["contacts"][name] = new_b64
+            self.save_config()
+        return raw
+
+    def _add_contact(self, name: str, pub_b64: str) -> None:
+        try:
+            raw = crypto.b64d(pub_b64)
+        except ValueError as exc:
+            raise StoreError(f"corrupt key from {name}") from exc
+        if len(raw) == LEGACY_PUB_LEN:
+            self.config["legacy_contacts"][name] = pub_b64
+        self.config["contacts"][name] = pub_b64
 
     # ------------------------------------------------------------- invites
     def invite_contact(self, other: str) -> None:
@@ -256,14 +437,14 @@ class Session:
             for p in self.config["pending"]
         ):
             raise StoreError(f"invite to {other} is already pending")
-        ident = self.shared.read_identity(other)
+        pub = self._identity_pub(other)
         payload = {
             "type": "contact",
             "from": self.name,
             "from_pub": crypto.b64e(self.pub),
             "ts": time.time(),
         }
-        self._drop_sealed(self.shared.invites_dir(other), ident["pub"], payload)
+        self._drop_sealed(self.shared.invites_dir(other), crypto.b64e(pub), payload)
         self.config["pending"].append({"type": "contact", "to": other})
         self.save_config()
 
@@ -274,7 +455,7 @@ class Session:
             raise StoreError("you are not a member of that group")
         if other == self.name:
             raise StoreError("cannot invite yourself")
-        ident = self.shared.read_identity(other)
+        pub = self._identity_pub(other)
         payload = {
             "type": "group",
             "from": self.name,
@@ -284,16 +465,17 @@ class Session:
             "group_key": group["key"],
             "ts": time.time(),
         }
-        self._drop_sealed(self.shared.invites_dir(other), ident["pub"], payload)
+        self._drop_sealed(self.shared.invites_dir(other), crypto.b64e(pub), payload)
         self.config["pending"].append({"type": "group", "to": other, "group_id": gid})
         self.save_config()
 
     def _drop_sealed(self, directory: str, pub_b64: str, payload: dict) -> None:
         _make_dir(directory, DROP_DIR_MODE)
         blob = crypto.seal(crypto.b64d(pub_b64), json.dumps(payload).encode())
-        wrapper = json.dumps({"sealed": crypto.b64e(blob)}).encode()
         _atomic_write(
-            os.path.join(directory, _msg_filename()), wrapper, PUBLIC_FILE_MODE
+            os.path.join(directory, _msg_filename()),
+            _wrap("sealed", blob),
+            PUBLIC_FILE_MODE,
         )
 
     def list_invites(self) -> List[Tuple[str, dict]]:
@@ -321,13 +503,27 @@ class Session:
         return out
 
     def _read_sealed(self, path: str) -> Optional[dict]:
+        """Open an invite or reply: the current format, or one 0.x sealed
+        to our old key. Anything else (or undecryptable) is None."""
         try:
             with open(path, "rb") as fh:
                 wrapper = json.loads(fh.read())
-            return json.loads(
-                crypto.unseal(self.priv, crypto.b64d(wrapper["sealed"]))
-            )
-        except (OSError, ValueError, KeyError, crypto.DecryptError):
+            version = wrapper.get("v")
+            blob = crypto.b64d(wrapper["sealed"])
+            if version == crypto.FORMAT:
+                plain = crypto.unseal(self.priv, blob)
+            elif version is None and "legacy_priv" in self.config:
+                from . import legacy
+
+                plain = legacy.unseal(self._legacy_priv(), blob)
+            else:
+                return None
+            payload = json.loads(plain)
+            return payload if isinstance(payload, dict) else None
+        except (
+            OSError, ValueError, KeyError, TypeError, AttributeError,
+            crypto.DecryptError, crypto.LegacyUnavailable,
+        ):
             return None
 
     @staticmethod
@@ -340,15 +536,19 @@ class Session:
     def accept_invite(self, fname: str, payload: dict) -> str:
         """Accept an invite; returns a human-readable description."""
         sender = payload["from"]
+        if payload["type"] not in ("contact", "group"):
+            raise StoreError(f"unknown invite type: {payload['type']}")
+        # where the reply goes: an invite 0.x sealed carries an X25519 key
+        reply_pub = self._peer_pub(sender, payload["from_pub"])
         if payload["type"] == "contact":
-            self.config["contacts"][sender] = payload["from_pub"]
+            self._add_contact(sender, payload["from_pub"])
             desc = f"chat with {sender}"
             reply = {
                 "type": "contact_accept",
                 "from": self.name,
                 "from_pub": crypto.b64e(self.pub),
             }
-        elif payload["type"] == "group":
+        else:
             gid = payload["group_id"]
             self.config["groups"][gid] = {
                 "name": payload["group_name"],
@@ -361,12 +561,10 @@ class Session:
                 "group_id": gid,
                 "group_name": payload["group_name"],
             }
-        else:
-            raise StoreError(f"unknown invite type: {payload['type']}")
 
         self.save_config()
         self._drop_sealed(
-            self.shared.replies_dir(sender), payload["from_pub"], reply
+            self.shared.replies_dir(sender), crypto.b64e(reply_pub), reply
         )
         self._discard(os.path.join(self.shared.invites_dir(self.name), fname))
         return desc
@@ -377,9 +575,14 @@ class Session:
             "from": self.name,
             "group_id": payload.get("group_id"),
         }
-        self._drop_sealed(
-            self.shared.replies_dir(payload["from"]), payload["from_pub"], reply
-        )
+        try:
+            pub = self._peer_pub(payload["from"], payload["from_pub"])
+        except StoreError:
+            pub = None  # a 0.x sender could not read the reply anyway
+        if pub is not None:
+            self._drop_sealed(
+                self.shared.replies_dir(payload["from"]), crypto.b64e(pub), reply
+            )
         self._discard(os.path.join(self.shared.invites_dir(self.name), fname))
 
     def remove_contact(self, other: str) -> None:
@@ -392,9 +595,13 @@ class Session:
         if pub_b64 is None:
             raise StoreError(f"{other} is not a contact")
         self.save_config()
+        try:
+            pub = self._peer_pub(other, pub_b64)
+        except StoreError:
+            return  # a 0.x client could not read the notice anyway
         self._drop_sealed(
             self.shared.replies_dir(other),
-            pub_b64,
+            crypto.b64e(pub),
             {"type": "contact_removed", "from": self.name},
         )
 
@@ -411,10 +618,10 @@ class Session:
             del self.config["groups"][gid]
             self.save_config()
             return
-        ident = self.shared.read_identity(other)
+        pub = self._identity_pub(other)
         self._drop_sealed(
             self.shared.replies_dir(other),
-            ident["pub"],
+            crypto.b64e(pub),
             {
                 "type": "group_removed",
                 "from": self.name,
@@ -442,7 +649,7 @@ class Session:
             sender = payload.get("from", "?")
             kind = payload.get("type")
             if kind == "contact_accept":
-                self.config["contacts"][sender] = payload["from_pub"]
+                self._add_contact(sender, payload["from_pub"])
                 self._clear_pending("contact", sender)
                 notices.append(f"{sender} accepted your chat invite")
                 changed = True
@@ -493,7 +700,7 @@ class Session:
     def create_group(self, group_name: str) -> str:
         if not group_name.strip():
             raise StoreError("group name must not be empty")
-        gid = secrets.token_hex(8)
+        gid = crypto.random_bytes(8).hex()
         key = crypto.new_symmetric_key()
         _make_dir(self.shared.group_dir(gid), USER_DIR_MODE)
         _make_dir(self.shared.group_msgs_dir(gid), DROP_DIR_MODE)
@@ -522,48 +729,69 @@ class Session:
         return None
 
     # ------------------------------------------------------------ messages
-    def _conv(self, kind: str, target: str) -> Tuple[str, bytes, bytes]:
-        """Resolve (directory, key, aad) for a conversation."""
+    def _conv_location(self, kind: str, target: str) -> Tuple[str, bytes]:
+        """Resolve (directory, aad) for a conversation we belong to."""
         if kind == "dm":
-            pub_b64 = self.config["contacts"].get(target)
-            if pub_b64 is None:
+            if target not in self.config["contacts"]:
                 raise StoreError(
                     f"no key exchanged with {target} - send or accept an invite first"
                 )
             directory = self.shared.dm_dir(self.name, target)
-            try:
-                key = crypto.pair_key(self.priv, crypto.b64d(pub_b64))
-            except ValueError as exc:
-                raise StoreError(f"corrupt key stored for {target}") from exc
             aad = os.path.basename(directory).encode()
-            return directory, key, b"paf-dm|" + aad
+            return directory, b"paf-dm|" + aad
         if kind == "grp":
-            group = self.config["groups"].get(target)
-            if group is None:
+            if target not in self.config["groups"]:
                 raise StoreError("no key for that group - accept an invite first")
-            try:
-                key = crypto.b64d(group["key"])
-            except ValueError as exc:
-                raise StoreError("corrupt key stored for that group") from exc
-            if len(key) != crypto.KEY_LEN:
-                raise StoreError("corrupt key stored for that group")
-            directory = self.shared.group_msgs_dir(target)
-            return directory, key, b"paf-grp|" + target.encode()
+            return self.shared.group_msgs_dir(target), b"paf-grp|" + target.encode()
         raise StoreError(f"bad conversation kind: {kind}")
+
+    def _group_key(self, gid: str) -> bytes:
+        try:
+            key = crypto.b64d(self.config["groups"][gid]["key"])
+        except ValueError as exc:
+            raise StoreError("corrupt key stored for that group") from exc
+        if len(key) != crypto.KEY_LEN:
+            raise StoreError("corrupt key stored for that group")
+        return key
+
+    def _conv(self, kind: str, target: str) -> Tuple[str, bytes, bytes]:
+        """Resolve (directory, key, aad) for a conversation's new messages."""
+        directory, aad = self._conv_location(kind, target)
+        if kind == "dm":
+            key = crypto.pair_key(self.priv, self._contact_pub(target))
+        else:
+            key = crypto.group_message_key(self._group_key(target), target)
+        return directory, key, aad
+
+    def _legacy_key(self, kind: str, target: str) -> Optional[bytes]:
+        """The key 0.x used for this conversation, or None if there is none
+        (or this OpenSSL refuses the 0.x algorithms)."""
+        try:
+            if kind == "grp":
+                return self._group_key(target)
+            their = self.config["legacy_contacts"].get(target)
+            if their is None or "legacy_priv" not in self.config:
+                return None
+            from . import legacy
+
+            return legacy.pair_key(self._legacy_priv(), crypto.b64d(their))
+        except (StoreError, ValueError, crypto.LegacyUnavailable):
+            return None
 
     def send_message(self, kind: str, target: str, text: str) -> dict:
         directory, key, aad = self._conv(kind, target)
         _make_dir(directory, DROP_DIR_MODE)
         msg = {"from": self.name, "ts": time.time(), "text": text}
         blob = crypto.sym_encrypt(key, json.dumps(msg).encode(), aad)
-        wrapper = json.dumps({"blob": crypto.b64e(blob)}).encode()
         _atomic_write(
-            os.path.join(directory, _msg_filename()), wrapper, PUBLIC_FILE_MODE
+            os.path.join(directory, _msg_filename()),
+            _wrap("blob", blob),
+            PUBLIC_FILE_MODE,
         )
         return msg
 
     def list_message_files(self, kind: str, target: str) -> List[str]:
-        directory, _, _ = self._conv(kind, target)
+        directory, _ = self._conv_location(kind, target)
         try:
             return sorted(
                 f for f in os.listdir(directory) if f.endswith(".json")
@@ -574,21 +802,87 @@ class Session:
     def load_messages(
         self, kind: str, target: str, filenames: List[str]
     ) -> Dict[str, dict]:
-        """Decrypt the given message files; undecryptable files are skipped."""
-        directory, key, aad = self._conv(kind, target)
+        """Decrypt the given message files; undecryptable files are skipped.
+
+        A message 0.x wrote is read with the 0.x key; if it is one of ours
+        and the conversation has a current key, it is re-encrypted in place
+        (only its owner may replace a file in the sticky directory)."""
+        directory, aad = self._conv_location(kind, target)
+        try:
+            key: Optional[bytes] = self._conv(kind, target)[1]
+        except StoreError:
+            key = None  # e.g. a contact who has not upgraded yet
+        legacy_key = None
         out: Dict[str, dict] = {}
         for fname in filenames:
+            path = os.path.join(directory, fname)
             try:
-                with open(os.path.join(directory, fname), "rb") as fh:
+                with open(path, "rb") as fh:
                     wrapper = json.loads(fh.read())
-                msg = json.loads(
-                    crypto.sym_decrypt(key, crypto.b64d(wrapper["blob"]), aad)
-                )
+                version = wrapper.get("v")
+                blob = crypto.b64d(wrapper["blob"])
+                if version == crypto.FORMAT and key is not None:
+                    plain = crypto.sym_decrypt(key, blob, aad)
+                elif version is None:
+                    if legacy_key is None:
+                        legacy_key = self._legacy_key(kind, target)
+                    if legacy_key is None:
+                        continue
+                    from . import legacy
+
+                    plain = legacy.sym_decrypt(legacy_key, blob, aad)
+                else:
+                    continue
+                msg = json.loads(plain)
                 if isinstance(msg, dict) and "text" in msg:
                     out[fname] = msg
-            except (OSError, ValueError, KeyError, crypto.DecryptError):
+                    if (
+                        version is None
+                        and key is not None
+                        and msg.get("from") == self.name
+                    ):
+                        self._reencrypt(path, key, plain, aad)
+            except (
+                OSError, ValueError, KeyError, TypeError, AttributeError,
+                crypto.DecryptError, crypto.LegacyUnavailable,
+            ):
                 continue
         return out
+
+    @staticmethod
+    def _reencrypt(path: str, key: bytes, plain: bytes, aad: bytes) -> None:
+        blob = crypto.sym_encrypt(key, plain, aad)
+        try:
+            _atomic_write(path, _wrap("blob", blob), PUBLIC_FILE_MODE)
+        except OSError:
+            pass  # not our file after all; it stays as it was
+
+    def migrate(self) -> List[Tuple[str, int]]:
+        """Re-encrypt every 0.x message of ours that can be, now.
+
+        Returns (conversation, files still in the 0.x format) for each
+        conversation that has any left: messages from a contact who has not
+        upgraded yet, or anything this OpenSSL cannot read."""
+        left = []
+        convs = [("dm", c, c) for c in sorted(self.config["contacts"])] + [
+            ("grp", gid, "#" + g["name"])
+            for gid, g in sorted(self.config["groups"].items())
+        ]
+        for kind, target, label in convs:
+            directory, _ = self._conv_location(kind, target)
+            files = self.list_message_files(kind, target)
+            self.load_messages(kind, target, files)
+            remaining = 0
+            for fname in files:
+                try:
+                    with open(os.path.join(directory, fname), "rb") as fh:
+                        wrapper = json.loads(fh.read())
+                    remaining += isinstance(wrapper, dict) and "v" not in wrapper
+                except (OSError, ValueError):
+                    continue
+            if remaining:
+                left.append((label, remaining))
+        return left
 
     # ----------------------------------------------------------- read state
     @staticmethod

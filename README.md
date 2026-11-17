@@ -34,7 +34,7 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
 
 ## Features
 
-* **Register** with a username + passphrase; an X25519 identity keypair is
+* **Register** with a username + passphrase; a P-256 identity keypair is
   generated for you.
 * **Invite people to chat** — key exchange is push-based: the invite pushes
   your public key to them; accepting pushes their public key back to you.
@@ -65,8 +65,13 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
   passes `/help` on, which is not true of F1.
 * **Encrypted per-user config** — each client maintains its user's config
   file (private key, contact keys, group keys, read state) in the shared
-  directory, encrypted with a key derived from the passphrase (scrypt +
-  ChaCha20-Poly1305).
+  directory, encrypted with a key derived from the passphrase (PBKDF2-SHA256
+  + AES-256-GCM).
+* **FIPS-approved cryptography only** — P-256 ECDH, AES-256-GCM, HKDF-SHA256
+  and PBKDF2-HMAC-SHA256, on whatever OpenSSL `cryptography` is bound to.
+  Bound to a FIPS-validated OpenSSL in FIPS mode (RHEL 9 or Rocky 9 with
+  their own `python3-cryptography`), that is FIPS-validated crypto; anywhere
+  else paf warns at start, and runs.
 
 ## Security model
 
@@ -74,13 +79,17 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
   directory decide *who can see the files at all*; encryption decides *who
   can read the messages*.
 * Direct messages are encrypted with a key derived from the static-static
-  X25519 Diffie-Hellman secret of the two participants — readable only by
+  P-256 Diffie-Hellman secret of the two participants — readable only by
   someone holding one of the two private keys **and** the peer's public key.
 * Group messages are encrypted with the group's symmetric key, held only by
   members who accepted an invite.
-* Invites and invite replies are "sealed" (ephemeral X25519 → HKDF →
-  ChaCha20-Poly1305) to the recipient's public identity key.
+* Invites and invite replies are "sealed" (ephemeral P-256 ECDH → HKDF →
+  AES-256-GCM) to the recipient's public identity key.
 * All ciphertexts are authenticated (AEAD); tampered files are ignored.
+* Every encrypted file names its format (`"v": 2`). Accounts and messages
+  that 0.x wrote with X25519, ChaCha20-Poly1305 and scrypt are migrated, not
+  dropped: see
+  [Migrating from 0.x](https://phoneafriend.readthedocs.io/en/latest/security.html#migrating-from-0-x).
 * Out of scope for v1: forward secrecy/key rotation, sender authentication
   beyond conversation-key possession, traffic analysis (filenames reveal
   timing; directory names reveal who talks to whom), and revoking group keys.

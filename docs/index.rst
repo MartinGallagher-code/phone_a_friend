@@ -26,7 +26,7 @@ sending and receiving itself. A curses TUI runs in any bash terminal.
 Features
 --------
 
-* **Register** with a username + passphrase; an X25519 identity keypair is
+* **Register** with a username + passphrase; a P-256 identity keypair is
   generated for you.
 * **Invite people to chat** — key exchange is push-based: the invite pushes
   your public key to them; accepting pushes their public key back to you.
@@ -44,8 +44,13 @@ Features
   unread badges.
 * **Encrypted per-user config** — each client maintains its user's config
   file (private key, contact keys, group keys, read state) in the shared
-  directory, encrypted with a key derived from the passphrase (scrypt +
-  ChaCha20-Poly1305).
+  directory, encrypted with a key derived from the passphrase (PBKDF2-SHA256
+  + AES-256-GCM).
+* **FIPS-approved cryptography only** — P-256 ECDH, AES-256-GCM, HKDF-SHA256
+  and PBKDF2-HMAC-SHA256, on whatever OpenSSL ``cryptography`` is bound to.
+  Bound to a FIPS-validated OpenSSL in FIPS mode (RHEL 9 or Rocky 9 with
+  their own ``python3-cryptography``), that is FIPS-validated crypto; anywhere
+  else paf warns at start, and runs.
 
 Contents
 --------

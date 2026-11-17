@@ -8,8 +8,12 @@ client reads and writes plain files in the shared directory and does its own
 encryption. It is on PyPI as `phoneafriend` (no separators), the command is
 `paf`, and the import package is `phone_a_friend`.
 
-- `phone_a_friend/crypto.py`: X25519 identity keys, ChaCha20-Poly1305,
-  sealed invites, and the scrypt key that protects each user's config.
+- `phone_a_friend/crypto.py`: FIPS-approved primitives only: P-256 ECDH
+  identity keys, AES-256-GCM, HKDF-SHA256, sealed invites, and the
+  PBKDF2-HMAC-SHA256 key that protects each user's config (PAF-003).
+- `phone_a_friend/legacy.py`: the 0.x primitives (X25519, ChaCha20-Poly1305,
+  scrypt), read-only, imported only to migrate 0.x data. Nothing else may
+  import them; `tests/test_fips.py` checks.
 - `phone_a_friend/store.py`: the shared directory's files (README,
   *Shared-directory layout*) and each user's encrypted `config.enc`.
 - `phone_a_friend/tui.py`: the curses TUI. `phone_a_friend/__main__.py`: the
@@ -62,6 +66,10 @@ reuse lint
 python -m build && twine check dist/*
 pip install -r docs/requirements.txt && sphinx-build -W -b html docs docs/_build/html
 ```
+
+CI's **fips** job runs the suite again on Rocky Linux 9's own
+`python3-cryptography` with OpenSSL in FIPS mode; tests that need to write
+0.x fixtures skip there.
 
 CI (`.github/workflows/ci.yml`) runs the suite with the 100% coverage gate on
 Python 3.9, 3.11 and 3.13, then a smoke test of `paf` itself: two users
