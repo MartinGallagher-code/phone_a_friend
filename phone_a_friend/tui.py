@@ -133,6 +133,7 @@ KEY_ACTIONS = {
     7: "group",  # Ctrl-G
     curses.KEY_F4: "ginvite",
     15: "ginvite",  # Ctrl-O
+    6: "search",  # Ctrl-F
     curses.KEY_F9: "menu",
     curses.KEY_F10: "quit",
 }
@@ -147,6 +148,7 @@ KEY_REFERENCE = [
     "  Ctrl-N         invite a user to chat",
     "  Ctrl-G         create a group",
     "  Ctrl-O         invite a user to the open group",
+    "  Ctrl-F         search every conversation",
     "  PgUp/PgDn      scroll the conversation, or this page",
     "  Left/Right     move the cursor in the input line",
     "  Home/End       start / end of the line",
@@ -169,9 +171,10 @@ KEY_REFERENCE = [
     "  /gremove USER  remove a user from the open group",
     "  /leave         leave the open group",
     "  /rename NAME   rename the open group (its owner)",
+    "  /delete        delete the open group (its owner)",
     "  /presence on|off  show others when you are active,",
     "                 typing and what you have read",
-    "  /delete        delete the open group (its owner)",
+    "  /search WORDS  messages with all the words, anywhere",
     "  /menu          the selected item's menu",
     "  /help          this list, over a conversation",
     "  /quit          quit",
@@ -316,6 +319,8 @@ class App:
         self._layout: Optional[Tuple[int, int, int]] = None  # rows, cols, leftw
         self._cursor_at = (0, 0)
         self._clock = time.time
+        self.highlight: Optional[str] = None  # a search hit's file name
+        self._jump = False  # scroll to it at the next draw
         self.beacon_cache: Dict[str, Tuple[float, dict]] = {}
         self.beacons: Dict[str, dict] = {}
         self._last_beacon = 0.0
@@ -638,9 +643,10 @@ class App:
         else:
             conv = self.s.conv_key(*self.active)
             msgs = sorted(
-                self.msg_cache.get(conv, {}).values(), key=lambda m: m.get("ts", 0)
+                self.msg_cache.get(conv, {}).items(), key=lambda fm: fm[1].get("ts", 0)
             )
-            for m in msgs[-500:]:
+            jump_line = None
+            for fname, m in msgs[-500:]:
                 stamp = time.strftime("%H:%M", time.localtime(m.get("ts", 0)))
                 sender = m.get("from", "?")
                 attr = (
@@ -648,6 +654,9 @@ class App:
                     if sender == self.s.name
                     else curses.A_BOLD
                 )
+                if fname == self.highlight:
+                    attr |= curses.A_REVERSE
+                    jump_line = len(lines)
                 prefix = f"{stamp} {sender}: "
                 wrapped = wrap(m.get("text", ""), max(10, width - cells(prefix)))
                 lines.append((prefix + wrapped[0], attr))
@@ -662,6 +671,10 @@ class App:
                 verb = "is" if len(typists) == 1 else "are"
                 lines.append((f"  {', '.join(typists)} {verb} typing...", dim))
 
+        if self._jump and self.active is not None:
+            self._jump = False
+            if jump_line is not None:  # put the search hit mid-screen
+                self.scroll = max(0, len(lines) - jump_line - height // 2)
         max_scroll = max(0, len(lines) - height)
         self.scroll = min(self.scroll, max_scroll)
         end = len(lines) - self.scroll
@@ -806,6 +819,10 @@ class App:
             self._action_invite_group(scr)
         elif action == "menu":
             self._context_menu(scr)
+        elif action == "search":
+            query = self._prompt(scr, "search all conversations for: ")
+            if query:
+                self._search(scr, query)
         else:  # "quit"
             return not self._confirm(scr, QUIT_PROMPT)
         return True
@@ -918,6 +935,7 @@ class App:
     def _open_conv(self, kind: str, target: str) -> None:
         self.active = (kind, target)
         self.scroll = 0
+        self.highlight = None
         self._fetch_active(kind, target)
         self.s.mark_read(kind, target)
         self.unread[self.s.conv_key(kind, target)] = 0
@@ -1065,6 +1083,66 @@ class App:
         gname = self.s.config["groups"][gid]["name"]
         if self._confirm(scr, f"leave #{gname}? [y/N] "):
             self._remove_from_group(gid, self.s.name)
+
+    # --------------------------------------------------------------- search
+    def _search(self, scr, query: str) -> None:
+        """Search every conversation, one at a time, with progress on the
+        status line; Esc cancels. Hits go in a menu, newest conversation
+        first; choosing one opens its conversation at the message."""
+        terms = query.split()
+        convs = self.s.conversations()
+        found = []
+        count = 0
+        scr.timeout(0)
+        try:
+            for i, (kind, target) in enumerate(convs, 1):
+                if self._read_key(scr) == ESC:
+                    self.status = f"search cancelled ({count} found so far)"
+                    return
+                self.status = (
+                    f"searching {i}/{len(convs)}: {count} found - Esc cancels"
+                )
+                self._draw(scr)
+                hits = self.s.search_conversation(kind, target, terms, self.msg_cache)
+                if hits:
+                    found.append((kind, target, hits))
+                    count += len(hits)
+        finally:
+            scr.timeout(POLL_MS)
+        if not found:
+            self.status = f"no messages contain: {' '.join(terms)}"
+            return
+        found.sort(key=lambda c: c[2][0][0], reverse=True)
+        choices: List[Tuple[str, str, str]] = []
+        lines = []
+        for kind, target, hits in found:
+            label = self._conv_label(kind, target)
+            for n, (fname, msg) in enumerate(hits):
+                lead = label if n == 0 else ""
+                lines.append(f"{clip(lead, 14):<14} {self._hit_line(msg, terms)}")
+                choices.append((kind, target, fname))
+        self.status = f"{count} found in {len(found)} conversation(s)"
+        choice = self._popup(scr, f"search: {' '.join(terms)} - Enter opens", lines)
+        if choice is None:
+            return
+        kind, target, fname = choices[choice]
+        self._open_conv(kind, target)
+        self.highlight, self._jump = fname, True
+
+    def _conv_label(self, kind: str, target: str) -> str:
+        if kind == "dm":
+            return target
+        return "#" + self.s.config["groups"].get(target, {}).get("name", "?")
+
+    @staticmethod
+    def _hit_line(msg: dict, terms: List[str]) -> str:
+        """Date, sender and the text around the first term, on one line."""
+        text = " ".join(str(msg.get("text", "")).split())
+        at = text.casefold().find(terms[0].casefold())
+        start = max(0, at - 15)
+        snippet = ("..." if start else "") + text[start:start + 60]
+        stamp = time.strftime("%m-%d %H:%M", time.localtime(msg.get("ts", 0)))
+        return f"{stamp} {msg.get('from', '?')}: {snippet}"
 
     def _rename_group(self, gid: str, name: str) -> None:
         old = self.s.config["groups"][gid]["name"]
@@ -1271,7 +1349,7 @@ class App:
     # ---------------------------------------------------------- / commands
     USAGE = (
         "commands: /invite /unfriend /group /ginvite /gremove /leave "
-        "/rename /delete /presence /menu /help /quit"
+        "/rename /delete /presence /search /menu /help /quit"
     )
 
     def _run_command(self, scr, text: str) -> bool:
@@ -1299,6 +1377,8 @@ class App:
                 self.status = "open a group first, then /leave"
             else:
                 self._remove_from_group(gid, self.s.name)
+        elif cmd == "/search" and arg:
+            self._search(scr, arg)
         elif cmd == "/presence" and arg.lower() in ("on", "off"):
             self.s.set_share_presence(arg.lower() == "on")
             self._last_beacon = 0.0

@@ -1073,7 +1073,8 @@ class Session:
         key = crypto.hkdf(root, b"paf-beacon-v2|" + user.encode())
         return tag, key
 
-    def _beacon_convs(self) -> List[Tuple[str, str]]:
+    def conversations(self) -> List[Tuple[str, str]]:
+        """Every conversation we are in: ("dm", contact) and ("grp", gid)."""
         return [("dm", c) for c in sorted(self.config["contacts"])] + [
             ("grp", g) for g in sorted(self.config["groups"])
         ]
@@ -1087,7 +1088,7 @@ class Session:
             return False
         now = time.time() if now is None else now
         entries = {}
-        for kind, target in self._beacon_convs():
+        for kind, target in self.conversations():
             try:
                 tag, key = self._beacon_keys(kind, target, self.name)
             except StoreError:
@@ -1161,7 +1162,7 @@ class Session:
         except (OSError, ValueError, KeyError, AttributeError):
             return {}
         convs = {}
-        for kind, target in self._beacon_convs():
+        for kind, target in self.conversations():
             if kind == "dm" and target != user:
                 continue
             try:
@@ -1192,6 +1193,52 @@ class Session:
         if age < PRESENCE_IDLE:
             return "idle"
         return "away"
+
+    # --------------------------------------------------------------- search
+    @staticmethod
+    def matches(text: str, terms: List[str]) -> bool:
+        """True when ``text`` contains every term, ignoring case."""
+        folded = text.casefold()
+        return all(term.casefold() in folded for term in terms)
+
+    def search_conversation(
+        self,
+        kind: str,
+        target: str,
+        terms: List[str],
+        cache: Optional[Dict[str, Dict[str, dict]]] = None,
+    ) -> List[Tuple[str, dict]]:
+        """[(filename, message)] in one conversation containing every term,
+        newest first. ``cache`` (conv key -> {filename: message}, the TUI's
+        own) is filled as messages are decrypted, so a second search
+        decrypts nothing. The plaintext stays in memory: nothing is
+        written."""
+        cache = {} if cache is None else cache
+        seen = cache.setdefault(self.conv_key(kind, target), {})
+        try:
+            files = self.list_message_files(kind, target)
+            new = [f for f in files if f not in seen]
+            if new:
+                seen.update(self.load_messages(kind, target, new))
+        except StoreError:
+            return []
+        hits = [
+            (fname, msg) for fname, msg in seen.items()
+            if isinstance(msg.get("text"), str) and self.matches(msg["text"], terms)
+        ]
+        return sorted(hits, key=lambda h: h[0], reverse=True)
+
+    def search(
+        self, terms: List[str], cache: Optional[Dict[str, Dict[str, dict]]] = None
+    ) -> List[Tuple[str, str, List[Tuple[str, dict]]]]:
+        """Every conversation with hits, as (kind, target, hits), the one
+        with the newest hit first."""
+        found = []
+        for kind, target in self.conversations():
+            hits = self.search_conversation(kind, target, terms, cache)
+            if hits:
+                found.append((kind, target, hits))
+        return sorted(found, key=lambda c: c[2][0][0], reverse=True)
 
     # ----------------------------------------------------------- read state
     @staticmethod

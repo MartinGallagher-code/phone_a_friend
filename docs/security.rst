@@ -28,6 +28,15 @@ Out of scope for v1
   and the number and timing of a group's messages are visible.
 * Revoking group keys.
 
+Search
+------
+
+``/search`` decrypts messages in memory, through the same cache the TUI
+keeps for open conversations, and matches there. Nothing decrypted is
+written: there is no index, on the shared directory or in your home, which
+would undo the encryption. A search therefore costs one decryption per
+message the first time in a session, and none after.
+
 Presence
 --------
 

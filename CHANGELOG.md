@@ -11,6 +11,24 @@ stops working the way it did. `CLAUDE.md` has the rest.
 Sections 0.1.0 to 0.1.3 were written afterwards, from the git history, and
 are dated by their uploads to PyPI. Numbers in brackets are pull requests.
 
+## 1.4.0 — 2026-11-17
+
+Search every conversation (PAF-006).
+
+### Added
+
+- **`/search WORDS`**, and **Ctrl-F**, find every message containing all
+  the words, ignoring case, in every chat and group you can read. The
+  status line counts conversations and hits as it goes, and Esc cancels.
+  Hits are listed by conversation (the one with the newest hit first),
+  newest first, with the date, the sender and the text around the first
+  word. Enter opens the conversation scrolled to the message, highlighted.
+- **`paf search WORDS`** prints the same, grouped by conversation.
+- **Nothing decrypted is written.** Search decrypts in memory, through the
+  TUI's own message cache, so a second search decrypts only what arrived
+  since. 5,000 messages are searched in well under a second on a local
+  disk (the test allows 1 s for the first results).
+
 ## 1.3.0 — 2026-11-17
 
 Presence, typing indicators and read receipts (PAF-005), on by default.

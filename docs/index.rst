@@ -48,6 +48,11 @@ Features
   and "✓ read by bob" under your newest message. Each client keeps one small,
   encrypted beacon file in the shared directory. On by default;
   ``/presence off`` (or ``paf presence off``) stops writing it.
+* **Search** — ``/search WORDS`` (or Ctrl-F) finds every message containing all
+  the words, ignoring case, in every chat and group you can read. Hits are
+  listed by conversation, newest first; Enter opens the conversation at the
+  message. Esc cancels a search in progress. What is decrypted stays in
+  memory: no index is written anywhere.
 * **See who's around** — registered users you have not connected with yet
   are listed under USERS in the left pane; select one to send a chat invite.
 * **Send/receive messages** to users or groups, with mouse support and

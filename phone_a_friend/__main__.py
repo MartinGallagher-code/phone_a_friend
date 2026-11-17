@@ -232,6 +232,21 @@ def cmd_migrate(args) -> None:
         )
 
 
+def cmd_search(args) -> None:
+    s = _open_session_synced(args)
+    terms = " ".join(args.terms).split()
+    found = s.search(terms)
+    if not found:
+        print(f"no messages contain: {' '.join(terms)}")
+        return
+    for kind, target, hits in found:
+        name = target if kind == "dm" else "#" + s.config["groups"][target]["name"]
+        print(f"{name}:")
+        for _, m in hits:
+            stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(m.get("ts", 0)))
+            print(f"  {stamp} [{m.get('from', '?')}] {m['text']}")
+
+
 def cmd_presence(args) -> None:
     s = _open_session_synced(args)
     if args.state is not None:
@@ -311,6 +326,10 @@ def main(argv=None) -> None:
     p.add_argument("--group", "-g", help="group")
     sub.add_parser("status", help="show contacts, groups and unread counts")
     p = sub.add_parser(
+        "search", help="print every message containing all the words"
+    )
+    p.add_argument("terms", nargs="+")
+    p = sub.add_parser(
         "presence",
         help="show contacts' presence; on/off: share yours (default on)",
     )
@@ -337,6 +356,7 @@ def main(argv=None) -> None:
         "status": cmd_status,
         "migrate": cmd_migrate,
         "presence": cmd_presence,
+        "search": cmd_search,
     }
     fips_warning()
     try:

@@ -102,6 +102,7 @@ Ctrl-N/Ctrl-G/Ctrl-O itself):
    /rename NAME     rename the open group (its owner only)
    /delete          delete the open group for everyone (its owner only)
    /presence on|off share when you are active, typing, and what you have read
+   /search WORDS    every message containing all the words, in every chat and group
    /menu            the selected item's menu
    /help            the key reference, over an open conversation
    /quit            exit
@@ -131,4 +132,5 @@ prompt):
    paf -d /srv/paf -u alice delete-group "reading group"
    paf -d /srv/paf -u alice presence              # contacts: active / idle / away
    paf -d /srv/paf -u alice presence off          # stop sharing yours
+   paf -d /srv/paf -u alice search pizza friday    # messages with both words
    paf -d /srv/paf -u bob   status                # contacts, groups, unread
