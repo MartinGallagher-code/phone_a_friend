@@ -352,7 +352,12 @@ Publishing is automated via `.github/workflows/publish.yml` using PyPI
 token is stored in the repo. One-time setup on pypi.org: add a GitHub
 publisher for `MartinGallagher-code/phone_a_friend`, workflow
 `publish.yml`, environment `pypi`. Then creating a GitHub release (e.g.
-tag `v0.1.0`) builds, checks, and uploads the sdist and wheel.
+tag `v0.1.0`) builds, checks, and uploads the sdist and wheel. Pushing a `v*`
+tag, or running the workflow by hand (Actions → Publish to PyPI → Run
+workflow), does the same, and a release also attaches `paf.pyz`. A version
+already on PyPI is skipped rather than failing the run, so a release made
+after its version was uploaded still goes green and still attaches
+`paf.pyz`.
 
 ## Shared-directory layout
 
