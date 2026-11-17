@@ -59,9 +59,10 @@ Publishing is a separate step, and a person's call: push a `v*` tag, publish
 a GitHub release, or run `publish.yml` by hand, and PyPI trusted publishing
 uploads the sdist and wheel. A number that is never published is fine; a
 change with no number is not. A version already on PyPI is skipped
-(`skip-existing`), so a release made afterwards only attaches `paf.pyz`. A
-cloud session cannot publish: its git proxy refuses tag pushes and its
-GitHub app cannot start workflows (PAF-010), so ask the owner to run it.
+(`skip-existing`, from 2.1.1), so a release made after its version was
+uploaded only attaches `paf.pyz`. A cloud session cannot publish: its git
+proxy refuses tag pushes and its GitHub app cannot start workflows
+(PAF-010), so ask the owner to run it.
 
 ## Checks
 

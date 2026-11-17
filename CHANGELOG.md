@@ -18,10 +18,12 @@ The publish workflow skips what is already on PyPI (PAF-011).
 ### Changed
 
 - **`publish.yml` passes `skip-existing: true` to the PyPI upload.** It runs
-  on a pushed `v*` tag, a published GitHub release and a manual run, so a
-  release made for a version already uploaded (2.1.0 is, since PAF-010) no
-  longer fails with "400 File already exists"; it skips the upload and
-  still attaches `paf.pyz`. Nothing a user installs changes.
+  on a pushed `v*` tag, a published GitHub release and a manual run, so two
+  of them for one version, or a release made after its version was
+  uploaded by hand, no longer fail with "400 File already exists": the
+  upload is skipped and the release still gets `paf.pyz`. A run uses the
+  workflow as it is at the commit it builds, so this holds from 2.1.1 on.
+  Nothing a user installs changes.
 
 ## 2.1.0 — 2026-11-17
 
