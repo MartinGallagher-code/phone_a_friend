@@ -339,6 +339,13 @@ pip install coverage
 coverage run -m unittest discover -s tests && coverage report
 ```
 
+The sdist carries the whole suite and the tools it uses, so the same command
+works from an unpacked sdist. CI checks that on every build:
+
+```bash
+python -m build && python tools/check_release.py sdist dist/phoneafriend-*.tar.gz
+```
+
 ## Releasing to PyPI
 
 The version is single-sourced from `__version__` in
@@ -347,17 +354,46 @@ it there (and only there) and opens `CHANGELOG.md` with that version's own
 dated section, and CI's `version` job (`tests/check_version.sh`) fails a pull
 request that does not. Publishing is a separate step, taken when wanted.
 
-Publishing is automated via `.github/workflows/publish.yml` using PyPI
+Publishing is `.github/workflows/publish.yml`, using PyPI
 [trusted publishing](https://docs.pypi.org/trusted-publishers/) — no API
-token is stored in the repo. One-time setup on pypi.org: add a GitHub
-publisher for `MartinGallagher-code/phone_a_friend`, workflow
-`publish.yml`, environment `pypi`. Then creating a GitHub release (e.g.
-tag `v0.1.0`) builds, checks, and uploads the sdist and wheel. Pushing a `v*`
-tag, or running the workflow by hand (Actions → Publish to PyPI → Run
-workflow), does the same, and a release also attaches `paf.pyz`. A version
-already on PyPI is skipped rather than failing the run, so a release made
-after its version was uploaded still goes green and still attaches
-`paf.pyz`.
+token is stored in the repo. (One-time setup on pypi.org: a GitHub publisher
+for `MartinGallagher-code/phone_a_friend`, workflow `publish.yml`,
+environment `pypi`.) A published GitHub release is the one route that ships
+both the PyPI upload and `paf.pyz`:
+
+1. Merge the pull request that bumps the version, and let CI on `main` go
+   green.
+2. On GitHub: **Releases → Draft a new release**. Under *Choose a tag*, type
+   `vX.Y.Z` — exactly `v` and `__version__` — and create it on publish, with
+   target `main`. Title it `vX.Y.Z`, paste that version's `CHANGELOG.md`
+   section as the notes, and click **Publish release**.
+3. Watch **Actions → Publish to PyPI** (about ten minutes). It checks the
+   tag, runs the whole of CI on that commit, then uploads the sdist and wheel
+   CI built to PyPI and attaches the `paf.pyz` CI ran on Rocky Linux 9.
+4. Check that [PyPI](https://pypi.org/project/phoneafriend/) shows `X.Y.Z`,
+   that the release lists `paf.pyz` under *Assets*, and that the
+   [latest release](https://github.com/MartinGallagher-code/phone_a_friend/releases/latest)
+   link downloads a `paf.pyz` whose `python3 paf.pyz --version` says `X.Y.Z`.
+
+The workflow refuses, failing the run with one line and uploading nothing:
+
+* a release whose tag is not exactly `v` + `__version__` (on 2.1.2:
+  `v2.1.3`, `2.1.2` and `v2.1.2rc1` are all refused);
+* a release whose tag is on a commit that is not on `main`;
+* a manual run (Actions → Publish to PyPI → Run workflow) from any branch but
+  `main`; from `main` it uploads `v` + `__version__` to PyPI and attaches
+  nothing;
+* anything at all, if any CI job fails on the commit;
+* a `paf.pyz` whose `--version` is not the tag's.
+
+Pushing a tag on its own publishes nothing. A refused release can be
+deleted, with its tag, and made again once the fix is merged (under the
+fix's own version, since every change moves it); a run that failed on
+something passing, such as a network error, can be re-run from its page.
+A version already on PyPI is skipped rather than failing the run, so a
+re-run, or a release made after a manual run uploaded its version, still
+attaches `paf.pyz`. A run uses `publish.yml` as it is at the commit it
+publishes, so these checks hold from 2.1.2 on.
 
 ## Shared-directory layout
 

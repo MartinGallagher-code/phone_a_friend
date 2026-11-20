@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Martin J. Gallagher
+
+# What the sdist carries beyond setuptools' defaults (PAF-012): the whole
+# test suite and the tools it imports, so `python -m unittest discover -s
+# tests` passes from an unpacked sdist, and the changelog and the REUSE
+# licence metadata. The wheel is unchanged: it holds the phone_a_friend
+# package only (`packages` in pyproject.toml). CI's build job checks the
+# sdist with `tools/check_release.py sdist`.
+include CHANGELOG.md REUSE.toml
+recursive-include LICENSES *
+include tests/*.py tests/*.sh
+recursive-include tools *.py
+global-exclude __pycache__ *.py[cod]
