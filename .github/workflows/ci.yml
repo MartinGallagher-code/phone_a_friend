@@ -3,10 +3,14 @@
 
 name: CI
 
+# publish.yml calls this workflow (workflow_call) and uploads nothing until
+# every job here passes on the commit being published; it then uploads the
+# dist and paf.pyz artifacts that the build and pyz jobs below made.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 jobs:
   test:
@@ -23,7 +27,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install package
-        run: pip install . 'coverage[toml]'
+        # PyYAML is for tests/test_release.py, which reads the workflows.
+        run: pip install . 'coverage[toml]' pyyaml
       - name: Run tests with coverage (100% enforced)
         run: |
           coverage run -m unittest discover -s tests -v
@@ -184,6 +189,13 @@ jobs:
           pip install build twine
           python -m build
           twine check dist/*
+      - name: The sdist installs, holds everything, and its own suite passes
+        # Unpacks the sdist, checks it carries every file of the checkout's
+        # package, tests, tools and licences, that it loads as many tests as
+        # the checkout, and runs the suite from inside it.
+        run: |
+          pip install dist/*.tar.gz
+          python tools/check_release.py sdist dist/*.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: dist

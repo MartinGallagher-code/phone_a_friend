@@ -3,40 +3,65 @@
 
 name: Publish to PyPI
 
-# Publishes when a version tag (v*) is pushed, a GitHub release is
-# created, or the workflow is dispatched manually.
+# One route ships everything: publishing a GitHub release tagged
+# v + __version__ (vX.Y.Z) on a commit on main uploads the sdist and wheel to
+# PyPI and attaches paf.pyz to the release. A manual run (Actions -> Publish
+# to PyPI -> Run workflow), from main only, uploads v + __version__ to PyPI
+# and attaches nothing. Pushing a tag on its own publishes nothing.
+#
+# Nothing is uploaded until verify (tools/check_release.py tag) and the whole
+# of ci.yml pass on the commit being published, and what is uploaded is what
+# ci.yml built and tested there. Each refusal fails the run with one line.
+# A run uses this file as it is at the commit it publishes, so these checks
+# hold for 2.1.2 and later.
+#
 # Uses PyPI "trusted publishing" - no API token needed. One-time setup:
 # on pypi.org -> your project (or pending publisher) -> Publishing ->
 # add GitHub publisher: owner MartinGallagher-code, repo phone_a_friend,
 # workflow publish.yml, environment pypi.
 
 on:
-  push:
-    tags: ["v*"]
   release:
     types: [published]
   workflow_dispatch:
 
+# Two runs for one tag never overlap: the second waits for the first.
+concurrency:
+  group: publish-${{ github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
-  build:
+  verify:
+    name: verify (tag is v + __version__, on main)
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - name: Build sdist and wheel
-        run: |
-          pip install build twine
-          python -m build
-          twine check dist/*
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
+          fetch-depth: 0   # every branch, so origin/main is there to check against
+      - id: tag
+        name: The tag is v + __version__, and its commit is on main
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: >-
+          python3 tools/check_release.py tag
+          --event "$EVENT" --ref "$REF" --tag "$TAG" --sha "$GITHUB_SHA"
+
+  ci:
+    # The whole of CI on this commit: the suite with the coverage gate on
+    # 3.9, 3.11 and 3.13, FIPS on Rocky Linux 9, paf.pyz on Rocky Linux 9,
+    # version, reuse, and the build with the sdist round trip.
+    needs: verify
+    uses: ./.github/workflows/ci.yml
 
   publish:
-    needs: build
+    needs: [verify, ci]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -44,19 +69,21 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: dist
+          name: dist    # what ci.yml's build job built and tested
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # A version already on PyPI is skipped, not an error: a tag, a
-          # release and a manual run each start this workflow, so a release
-          # made after a version was uploaded (to attach paf.pyz) would
-          # otherwise fail here with "400 File already exists".
+          # A version already on PyPI is skipped, not an error, so a release
+          # re-run, or one made after a manual run uploaded its version,
+          # still attaches paf.pyz instead of failing with "400 File already
+          # exists". verify has already checked the version is the tag's.
           skip-existing: true
 
   pyz:
-    # Attach the single-file build to each GitHub release.
+    # Attach the single-file build to the release: the one ci.yml built and
+    # ran on Rocky Linux 9, once it says the tag's version.
     if: github.event_name == 'release'
+    needs: [verify, ci]
     runs-on: ubuntu-latest
     permissions:
       contents: write   # to upload the release asset
@@ -65,10 +92,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Build paf.pyz and attach it to the release
+      - uses: actions/download-artifact@v4
+        with:
+          name: paf.pyz
+          path: release/
+      - name: python3 paf.pyz --version says the tag's version
+        env:
+          TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          pip install cryptography
+          python3 tools/check_release.py pyz release/paf.pyz "$TAG"
+      - name: Attach paf.pyz to the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          python tools/build_pyz.py paf.pyz
-          gh release upload "$TAG" paf.pyz --clobber
+          TAG: ${{ needs.verify.outputs.tag }}
+        run: gh release upload "$TAG" release/paf.pyz --clobber
