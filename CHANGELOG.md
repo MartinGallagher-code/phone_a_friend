@@ -11,6 +11,49 @@ stops working the way it did. `CLAUDE.md` has the rest.
 Sections 0.1.0 to 0.1.3 were written afterwards, from the git history, and
 are dated by their uploads to PyPI. Numbers in brackets are pull requests.
 
+## 2.1.2 — 2026-11-20
+
+The release workflow checks what it ships, and the sdist is complete
+(PAF-012). Nothing a user installs from the wheel or `paf.pyz` changes.
+
+### Changed
+
+- **`publish.yml` refuses to publish the wrong thing.** A first job,
+  `verify` (`tools/check_release.py tag`), fails the run with one line unless
+  a release's tag is exactly `v` + `__version__` and tags a commit on `main`,
+  or a manual run is on `main`. Before this, any `v*` tag on any commit
+  published whatever `__version__` said, and with `skip-existing` a tag such
+  as `v2.2.0` on a 2.1.1 commit went green and attached a 2.1.1 `paf.pyz` to
+  a release called v2.2.0.
+- **Nothing is uploaded until the whole of CI passes on that commit.**
+  `ci.yml` can now be called (`workflow_call`), and `publish.yml` runs it
+  after `verify`: the suite with the coverage gate on 3.9, 3.11 and 3.13,
+  FIPS on Rocky Linux 9, `paf.pyz` on Rocky Linux 9, version, reuse and the
+  build. PyPI then gets the sdist and wheel that CI built and tested, and the
+  release gets the `paf.pyz` CI ran on Rocky, once `python3 paf.pyz
+  --version` says the tag's version (`check_release.py pyz`).
+- **A published release is the one route that ships both.** The `push: tags`
+  trigger is gone (the owner's decision): pushing a tag publishes nothing. A
+  release uploads to PyPI and attaches `paf.pyz`; a manual run from `main`
+  uploads to PyPI only. Runs for one tag wait for each other (`concurrency`).
+  A run uses the workflow at the commit it publishes, so all this holds from
+  2.1.2 on.
+- README's *Releasing to PyPI* is now a runbook: merge, draft a release
+  tagged `vX.Y.Z` on `main`, publish, and what to check afterwards, with what
+  the workflow refuses.
+
+### Fixed
+
+- **The sdist's own tests failed.** With no `MANIFEST.in`, the sdist left
+  out `tests/v0_store.py` and `tools/`, so `python -m unittest discover -s
+  tests` run from an unpacked 2.1.1 (or 2.1.0) sdist loaded 190 tests rather
+  than 280 and reported `FAILED (errors=3)`. A new `MANIFEST.in` adds them,
+  and `CHANGELOG.md`, `LICENSES/` and `REUSE.toml` too. CI's build job now
+  installs the sdist and runs `tools/check_release.py sdist`, which fails if
+  the sdist leaves out a file of the checkout's package, tests, tools or
+  licences, loads a different number of tests than the checkout, or fails
+  its suite run from inside it. The wheel is unchanged.
+
 ## 2.1.1 — 2026-11-17
 
 The publish workflow skips what is already on PyPI (PAF-011).

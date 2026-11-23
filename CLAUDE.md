@@ -55,23 +55,41 @@ than its base branch's, and a push to `main` whose version is not greater
 than what `main` had before it. If `main` moves while a pull request is
 open, rebase and bump again.
 
-Publishing is a separate step, and a person's call: push a `v*` tag, publish
-a GitHub release, or run `publish.yml` by hand, and PyPI trusted publishing
-uploads the sdist and wheel. A number that is never published is fine; a
-change with no number is not. A version already on PyPI is skipped
-(`skip-existing`, from 2.1.1), so a release made after its version was
-uploaded only attaches `paf.pyz`. A cloud session cannot publish: its git
-proxy refuses tag pushes and its GitHub app cannot start workflows
-(PAF-010), so ask the owner to run it.
+Publishing is a separate step, and a person's call: the owner publishes a
+GitHub release tagged `v` + `__version__` on `main` (README, *Releasing to
+PyPI*, is the runbook), and `publish.yml` uploads the sdist and wheel through
+PyPI trusted publishing and attaches `paf.pyz` to the release. A manual run
+of `publish.yml` from `main` uploads to PyPI only; a pushed tag publishes
+nothing (from 2.1.2, PAF-012). Before uploading anything, `publish.yml` runs
+`tools/check_release.py tag` (the tag is exactly `v` + `__version__`, and
+its commit is on `main`) and the whole of `ci.yml` (`workflow_call`) on that
+commit, then uploads what `ci.yml` built; `check_release.py pyz` checks the
+`paf.pyz` says the tag's version before it is attached. Keep any new release
+logic in `tools/check_release.py`, where `tests/test_release.py` drives it:
+the workflow itself cannot run on a pull request. A number that is never
+published is fine; a change with no number is not. A version already on
+PyPI is skipped (`skip-existing`, from 2.1.1), so a re-run only attaches
+`paf.pyz`. A cloud session cannot publish: its git proxy refuses tag pushes
+and its GitHub app cannot start workflows (PAF-010), so ask the owner to
+run it.
+
+The sdist carries the whole suite: `MANIFEST.in` adds `tests/v0_store.py`,
+`tools/`, `CHANGELOG.md`, `LICENSES/` and `REUSE.toml`, and CI's **build**
+job runs `tools/check_release.py sdist`, which fails if the sdist leaves out
+a file of the checkout's package, tests, tools or licences, loads a
+different number of tests, or fails its suite run from inside it. A new
+file the tests import goes under `tests/` or `tools/`, which `MANIFEST.in`
+already covers.
 
 ## Checks
 
 ```bash
-pip install -e . 'coverage[toml]'                 # coverage[toml] reads pyproject.toml on 3.9 and 3.10
+pip install -e . 'coverage[toml]' pyyaml          # coverage[toml] reads pyproject.toml on 3.9 and 3.10; PyYAML for test_release's workflow checks
 bash tests/check_version.sh origin/main           # bumped, agreed, and past main's
 coverage run -m unittest discover -s tests -v && coverage report   # 100% is enforced
 reuse lint
-python -m build && twine check dist/*
+rm -rf dist && python -m build && twine check dist/*
+python tools/check_release.py sdist dist/*.tar.gz # the sdist is complete and its suite passes inside it
 pip install -r docs/requirements.txt && sphinx-build -W -b html docs docs/_build/html
 ```
 
@@ -83,7 +101,7 @@ CI (`.github/workflows/ci.yml`) runs the suite with the 100% coverage gate on
 Python 3.9, 3.11 and 3.13, then a smoke test of `paf` itself: two users
 register, invite, accept and send, and the message must not appear in the
 clear in any `.json` file. It also runs the version job, `reuse lint`, and
-the build with `twine check`. Read the Docs builds with warnings as errors
+the build with `twine check` and the sdist round trip. Read the Docs builds with warnings as errors
 (`.readthedocs.yaml`), so run the Sphinx build too when `docs/` or a
 docstring changes. Coverage stays at 100%: a change to the code comes with
 the tests that cover it, in `tests/test_*.py`, which `unittest discover`
